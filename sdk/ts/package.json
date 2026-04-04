@@ -1,0 +1,31 @@
+{
+   "name": "@vault/sdk",
+   "version": "0.1.0",
+   "license": "CC-BY-NC-4.0",
+   "type": "module",
+   "main": "./dist/index.js",
+   "types": "./dist/index.d.ts",
+   "exports": {
+      ".": {
+         "types": "./dist/index.d.ts",
+         "import": "./dist/index.js",
+         "default": "./dist/index.js"
+      },
+      "./src/*": "./src/*"
+   },
+   "files": [
+      "dist",
+      "src"
+   ],
+   "scripts": {
+      "check": "tsc --noEmit",
+      "build": "tsc -p tsconfig.build.json",
+      "prepack": "npm run build"
+   },
+   "dependencies": {
+      "@solana/kit": "^6.7.0"
+   },
+   "devDependencies": {
+      "typescript": "^5.7.2"
+   }
+}
