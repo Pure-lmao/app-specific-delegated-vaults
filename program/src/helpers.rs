@@ -405,12 +405,9 @@ pub fn get_time() -> Result<u32, Error> {
    unix_timestamp_to_u32(ts)
 }
 
-/// `delegate_expires == 0` means no expiry. Otherwise `Clock::unix_timestamp` must be `<= delegate_expires`.
+/// `Clock::unix_timestamp` (as `u32`) must be `<= delegate_expires`. Use `u32::MAX` when the delegate should not expire within the `u32` timestamp range.
 #[inline]
 pub fn require_delegate_not_expired(delegate_expires: u32) -> Result<(), Error> {
-   if delegate_expires == 0 {
-      return Ok(());
-   }
    let now = get_time()?;
    if unlikely(now > delegate_expires) {
       log!("delegate authorization expired");

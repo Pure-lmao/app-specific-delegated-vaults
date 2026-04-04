@@ -64,57 +64,6 @@ fn update_delegate_and_expires_success() {
 }
 
 #[test]
-fn update_delegate_sets_expiry_zero() {
-   let mollusk = fresh_mollusk();
-   let owner = Pubkey::new_unique();
-   let app = test_program_id();
-   let delegate_old = Pubkey::new_unique();
-   let (pda, _) = derive_user_vault(&owner, &app);
-   let (sys_pk, sys_acct) = system_program_meta();
-   let create_accounts = vec![
-      (owner, signer_account(2_000_000_000)),
-      (pda, Account::default()),
-      (app, Account::default()),
-      (delegate_old, Account::default()),
-      (sys_pk, sys_acct.clone()),
-   ];
-   let create_ix = Instruction::new_with_bytes(
-      vault_program_id(),
-      &ix_create(9_000_000),
-      vec![
-         AccountMeta::new(owner, true),
-         AccountMeta::new(pda, false),
-         AccountMeta::new_readonly(app, false),
-         AccountMeta::new_readonly(delegate_old, false),
-         AccountMeta::new_readonly(sys_pk, false),
-      ],
-   );
-   let r0 = mollusk.process_and_validate_instruction(&create_ix, &create_accounts, &[Check::success()]);
-   log_cu("update_user_vault_delegate::update_delegate_sets_expiry_zero:create", &r0);
-   let upd_accounts = vec![
-      (owner, signer_account(2_000_000_000)),
-      (pda, Account::default()),
-      (app, Account::default()),
-      (delegate_old, Account::default()),
-   ];
-   let merged = merge_accounts(&upd_accounts, &r0);
-   let upd_ix = Instruction::new_with_bytes(
-      vault_program_id(),
-      &ix_update_delegate(0),
-      vec![
-         AccountMeta::new(owner, true),
-         AccountMeta::new(pda, false),
-         AccountMeta::new_readonly(app, false),
-         AccountMeta::new_readonly(delegate_old, false),
-      ],
-   );
-   let r1 = mollusk.process_and_validate_instruction(&upd_ix, &merged, &[Check::success()]);
-   log_cu("update_user_vault_delegate::update_delegate_sets_expiry_zero:update", &r1);
-   let v = decode_user_vault(&r1.get_account(&pda).unwrap().data).unwrap();
-   assert_eq!(v.delegate_expires, 0);
-}
-
-#[test]
 fn update_fails_owner_not_signer() {
    let mollusk = fresh_mollusk();
    let owner = Pubkey::new_unique();

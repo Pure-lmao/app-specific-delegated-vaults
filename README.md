@@ -18,7 +18,7 @@ Token `approve` / `delegate` exists, but it is scoped to a single token account 
 
 - **Per-user, per-app vault** -- PDA derived from `["vault", owner, your_program_id]`. Your users' funds are isolated from every other app using the same vault program.
 - **Delegate-authorized spending** -- Assign a delegate key (ephemeral keypair, session key, server key) that can spend SOL and SPL tokens from the vault, gated to your program.
-- **Built-in expiry** -- `delegate_expires` is a Unix timestamp. Set it to `now + 1 hour` and the chain enforces the session window. `0` means no expiry.
+- **Built-in expiry** -- `delegate_expires` is a Unix timestamp. Set it to `now + 1 hour` and the chain enforces the session window. Use `u32::MAX` when you do not want expiry within the representable range.
 - **Owner always in control** -- The user can withdraw, rotate the delegate, or close the vault at any time without the delegate's involvement.
 - **SOL + SPL + Token-2022** -- Native lamports live on the PDA itself. SPL tokens (classic and Token-2022) live in vault ATAs, created on first deposit.
 
@@ -142,7 +142,7 @@ UserVaultAccount (104 bytes):
   owner           Pubkey   (32 bytes)
   app_address     Pubkey   (32 bytes)
   delegate        Pubkey   (32 bytes)
-  delegate_expires u32     (Unix seconds; 0 = no expiry)
+  delegate_expires u32     (Unix seconds; use u32::MAX for no practical expiry)
   ata_count       u16      (open vault ATAs)
   bump            u8       (PDA bump seed)
 ```
@@ -154,7 +154,7 @@ Custom errors: see `program/src/error.rs`.
 - **`CpiEntry` / `CpiEntryNative`** verify the top-level instruction is from `app_address` via the instructions sysvar. Don't assume they're safe to call outside that transaction structure.
 - **`AppIx`** CPIs into your program -- your program is the callee and must validate what it does with the vault PDA signer.
 - **Owner withdrawals** enforce the destination ATA is owned by the owner.
-- **`delegate_expires`** uses the on-chain `Clock` sysvar. A `0` value disables expiry entirely.
+- **`delegate_expires`** uses the on-chain `Clock` sysvar. Delegate actions require `unix_timestamp <= delegate_expires` (as `u32`). Set `delegate_expires` to `u32::MAX` for no practical expiry.
 
 ---
 

@@ -8,7 +8,7 @@
 //! 3. `delegate` (readonly) — initial delegate pubkey stored in state
 //! 4. `system_program` (readonly)
 //!
-//! Data: `[discriminator (u8), delegate_expires (u32)]` — `delegate_expires == 0` means no expiry.
+//! Data: `[discriminator (u8), delegate_expires (u32)]` — Unix seconds; use `u32::MAX` for no practical expiry.
 
 use crate::{
    constants::{ID, USER_VAULT_SEED}, error::Error, helpers::{

@@ -6,7 +6,7 @@
 //! 2. `app_address` (readonly)
 //! 3. `delegate` (readonly)
 //!
-//! Data: `[discriminator (u8), delegate_expires (u32)]` — `delegate_expires == 0` means no expiry.
+//! Data: `[discriminator (u8), delegate_expires (u32)]` — Unix seconds; use `u32::MAX` for no practical expiry.
 
 use crate::helpers::{load_user_vault, parse_u32_instruction_data, require_signer};
 use pinocchio::{AccountView, Address, ProgramResult, error::ProgramError};

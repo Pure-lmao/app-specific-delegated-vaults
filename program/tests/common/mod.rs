@@ -98,11 +98,15 @@ pub fn overlay_accounts(layers: &[&[(Pubkey, Account)]]) -> Vec<(Pubkey, Account
    out
 }
 
+/// Mollusk defaults `Clock` to `0`, but the vault rejects `unix_timestamp <= 0` when checking delegate expiry.
+const DEFAULT_MOLLUSK_UNIX_TIMESTAMP: i64 = 1_700_000_000;
+
 pub fn fresh_mollusk() -> Mollusk {
    crate::ensure_integration_test_env();
    set_sbf_out_dir_vault();
    let vault_id = vault_program_id();
    let mut mollusk = Mollusk::new(&vault_id, "app_specific_delegated_vaults");
+   mollusk.sysvars.clock.unix_timestamp = DEFAULT_MOLLUSK_UNIX_TIMESTAMP;
    token::add_program(&mut mollusk);
    associated_token::add_program(&mut mollusk);
    let elf = std::fs::read(test_program_elf_path()).expect(

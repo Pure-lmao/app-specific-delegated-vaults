@@ -30,7 +30,7 @@ fn cpi_entry_native_success() {
    ];
    let create_ix = Instruction::new_with_bytes(
       vault_program_id(),
-      &ix_create(0),
+      &ix_create(u32::MAX),
       vec![
          AccountMeta::new(owner, true),
          AccountMeta::new(pda, false),
@@ -153,7 +153,7 @@ fn cpi_entry_native_fails_unauthorized_top_level() {
    ];
    let create_ix = Instruction::new_with_bytes(
       vault_program_id(),
-      &ix_create(0),
+      &ix_create(u32::MAX),
       vec![
          AccountMeta::new(owner, true),
          AccountMeta::new(pda, false),
@@ -206,7 +206,7 @@ fn cpi_entry_native_fails_delegate_mismatch() {
    ];
    let create_ix = Instruction::new_with_bytes(
       vault_program_id(),
-      &ix_create(0),
+      &ix_create(u32::MAX),
       vec![
          AccountMeta::new(owner, true),
          AccountMeta::new(pda, false),

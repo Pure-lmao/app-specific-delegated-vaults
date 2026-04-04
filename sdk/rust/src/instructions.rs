@@ -41,7 +41,7 @@ fn require_cpi_entry_amounts(amount_native: u64, amount: u64) -> Result<(), Vaul
    }
 }
 
-/// `CreateUserVault` — 5 accounts: owner, user_vault_pda, app, delegate, system. Data: discriminator + `delegate_expires` u32 LE (`0` = no expiry).
+/// `CreateUserVault` — 5 accounts: owner, user_vault_pda, app, delegate, system. Data: discriminator + `delegate_expires` u32 LE (Unix seconds; `u32::MAX` = no practical expiry).
 pub fn create_user_vault_ix(
    program_id: &Pubkey,
    owner: &Pubkey,
@@ -105,7 +105,7 @@ pub fn deposit_user_vault_ix(
    })
 }
 
-/// `UpdateUserVaultDelegate` — 4 accounts. Data: discriminator + `delegate_expires` u32 LE (`0` = no expiry).
+/// `UpdateUserVaultDelegate` — 4 accounts. Data: discriminator + `delegate_expires` u32 LE (Unix seconds; `u32::MAX` = no practical expiry).
 pub fn update_user_vault_delegate_ix(
    program_id: &Pubkey,
    owner: &Pubkey,

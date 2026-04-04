@@ -27,12 +27,12 @@ fn base_create_accounts() -> (Pubkey, Pubkey, Pubkey, Pubkey, Pubkey, Vec<(Pubke
 }
 
 #[test]
-fn create_success_with_expiry_zero() {
+fn create_success_with_max_delegate_expires() {
    let mollusk = fresh_mollusk();
    let (owner, app, delegate, pda, sys_pk, accounts) = base_create_accounts();
    let ix = Instruction::new_with_bytes(
       vault_program_id(),
-      &ix_create(0),
+      &ix_create(u32::MAX),
       vec![
          AccountMeta::new(owner, true),
          AccountMeta::new(pda, false),
@@ -50,13 +50,13 @@ fn create_success_with_expiry_zero() {
          .build(),
    ];
    let r = mollusk.process_and_validate_instruction(&ix, &accounts, &checks);
-   log_cu("create_user_vault::create_success_with_expiry_zero", &r);
+   log_cu("create_user_vault::create_success_with_max_delegate_expires", &r);
    let data = r.get_account(&pda).expect("pda").data.clone();
    let v = decode_user_vault(&data).expect("decode");
    assert_eq!(v.owner, owner);
    assert_eq!(v.app_address, app);
    assert_eq!(v.delegate, delegate);
-   assert_eq!(v.delegate_expires, 0);
+   assert_eq!(v.delegate_expires, u32::MAX);
    assert_eq!(v.ata_count, 0);
 }
 

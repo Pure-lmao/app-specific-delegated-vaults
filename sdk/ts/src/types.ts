@@ -15,7 +15,7 @@ export type UserVaultAccountData = Readonly<{
 }>;
 
 export type CreateUserVaultInput = Readonly<{
-   /** Unix timestamp seconds (u32); `0` means delegate does not expire. */
+   /** Unix timestamp seconds (u32); use `0xffffffff` for no practical expiry. */
    delegateExpires: number;
 }>;
 
@@ -32,7 +32,7 @@ export type WithdrawUserVaultNativeInput = Readonly<{
 }>;
 
 export type UpdateUserVaultDelegateInput = Readonly<{
-   /** Unix timestamp seconds (u32); `0` means delegate does not expire. */
+   /** Unix timestamp seconds (u32); use `0xffffffff` for no practical expiry. */
    delegateExpires: number;
 }>;
 
