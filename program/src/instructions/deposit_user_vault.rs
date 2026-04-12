@@ -18,16 +18,18 @@ use crate::{
    error::Error,
    helpers::{
       assert_associated_token_program, assert_spl_token_program, assert_system_program,
-      invoke_token_transfer_checked_with_decimals, load_user_vault, parse_u64_instruction_data, require_signer,
-      vault_ata_exists, verify_mint_account, verify_token_account,
+      assert_user_vault_is_owned_by_program_and_correct_length,
+      get_vault_ata_count, invoke_token_transfer_checked_with_decimals,
+      mint_base_decimals, parse_u64_instruction_data, require_signer,
+      vault_ata_exists, verify_vault_owner_and_app_address,
    },
 };
-use pinocchio::{error::ProgramError, AccountView, Address, ProgramResult, hint::unlikely};
+use pinocchio::{error::ProgramError, AccountView, ProgramResult, hint::unlikely};
 use pinocchio_associated_token_account::instructions::Create;
 use pinocchio_log::log;
 
 #[inline(never)]
-pub fn process(program_id: &Address, accounts: &[AccountView], data: &[u8]) -> ProgramResult {
+pub fn process(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
    let amount = parse_u64_instruction_data(data).map_err(|e| {
       log!("deposit_user_vault: invalid instruction data");
       e
@@ -57,11 +59,13 @@ pub fn process(program_id: &Address, accounts: &[AccountView], data: &[u8]) -> P
    assert_spl_token_program(token_program)?;
    assert_associated_token_program(ata_program)?;
 
-   let mut vault = load_user_vault(program_id, user_vault_pda, owner.address(), app_address.address())?;
+   assert_user_vault_is_owned_by_program_and_correct_length(user_vault_pda)?;
+   verify_vault_owner_and_app_address(user_vault_pda, owner.address(), app_address.address())?;
 
-   let decimals = verify_mint_account(mint, token_program)?;
-
-   verify_token_account(source_ata, token_program, owner.address(), mint.address())?;
+   let decimals = mint_base_decimals(mint).map_err(|e| {
+      log!("deposit_user_vault: mint decimals read failed");
+      e
+   })?;
 
    let ata_exists = vault_ata_exists(user_vault_ata, token_program, user_vault_pda.address(), mint.address())?;
 
@@ -80,23 +84,18 @@ pub fn process(program_id: &Address, accounts: &[AccountView], data: &[u8]) -> P
          e
       })?;
 
-      vault.ata_count = vault
-         .ata_count
-         .checked_add(1)
-         .ok_or_else(|| {
-            log!("deposit_user_vault: ata_count overflow");
-            Error::ArithmeticOverflow
-         })?;
+      let count = get_vault_ata_count(user_vault_pda);
+      let new_count = count.checked_add(1).ok_or_else(|| {
+         log!("deposit_user_vault: ata_count overflow");
+         Error::ArithmeticOverflow
+      })?;
       {
          let mut dst = user_vault_pda.try_borrow_mut()?;
-         vault.pack(&mut dst).map_err(|e| {
-            log!("deposit_user_vault: pack ata_count failed");
-            e
-         })?;
+         unsafe {
+            core::ptr::write(dst.as_mut_ptr().add(2) as *mut u16, new_count);
+         }
       }
    }
-
-   verify_token_account(user_vault_ata, token_program, user_vault_pda.address(), mint.address())?;
 
    invoke_token_transfer_checked_with_decimals(
       token_program,

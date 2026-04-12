@@ -137,14 +137,14 @@ Single-byte discriminator as the first byte of instruction data.
 ### Vault account layout
 
 ```
-UserVaultAccount (104 bytes):
-  discriminator   u8       (always 0)
-  owner           Pubkey   (32 bytes)
-  app_address     Pubkey   (32 bytes)
-  delegate        Pubkey   (32 bytes)
-  delegate_expires u32     (Unix seconds; use u32::MAX for no practical expiry)
-  ata_count       u16      (open vault ATAs)
-  bump            u8       (PDA bump seed)
+UserVaultAccount (104 bytes, #[repr(C)] on-chain):
+  discriminator    u8       (always 0)
+  bump             u8       (PDA bump seed)
+  ata_count        u16      (open vault ATAs)
+  delegate_expires u32      (Unix seconds; use u32::MAX for no practical expiry)
+  owner            Pubkey   (32 bytes)
+  app_address      Pubkey   (32 bytes)
+  delegate         Pubkey   (32 bytes)
 ```
 
 Custom errors: see `program/src/error.rs`.

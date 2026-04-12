@@ -14,6 +14,8 @@ use solana_account::Account;
 use solana_program_error::ProgramError;
 use solana_program_option::COption;
 use solana_pubkey::Pubkey;
+use solana_sdk_ids::sysvar::clock as clock_sysvar;
+use solana_sdk_ids::sysvar::rent as rent_sysvar;
 use spl_associated_token_account_interface::address::get_associated_token_address_with_program_id;
 use spl_token_interface::state::{Account as SplTokenAccount, AccountState, Mint};
 use std::io::Write;
@@ -77,6 +79,38 @@ pub fn with_ix_sysvar_and_loaders(ix: &Instruction, user: &[(Pubkey, Account)]) 
    let (pk, a) = instructions_sysvar_for(ix);
    // User layer first so placeholder `(app, default)` is overwritten by executable program stubs and real sysvar.
    overlay_accounts(&[user, &all_loader_accounts(), &[(pk, a)]])
+}
+
+/// [`clock_sysvar::id`] (for `AccountMeta`); account data must match [`Mollusk::sysvars`] (use [`with_clock_and_loaders`] / [`with_ix_sysvar_clock_and_loaders`]).
+pub fn clock_sysvar_pk() -> Pubkey {
+   clock_sysvar::id()
+}
+
+/// [`rent_sysvar::id`] for `CreateUserVault`; pair with [`rent_sysvar_account`].
+pub fn rent_sysvar_pk() -> Pubkey {
+   rent_sysvar::id()
+}
+
+/// Rent sysvar account serialized from `mollusk.sysvars.rent`.
+pub fn rent_sysvar_account(mollusk: &Mollusk) -> (Pubkey, Account) {
+   mollusk.sysvars.keyed_account_for_rent_sysvar()
+}
+
+/// Loader stubs + Clock sysvar serialized from `mollusk.sysvars.clock` (required for vault `app_ix` etc.).
+pub fn with_clock_and_loaders(mollusk: &Mollusk, user: &[(Pubkey, Account)]) -> Vec<(Pubkey, Account)> {
+   let (pk, acct) = mollusk.sysvars.keyed_account_for_clock_sysvar();
+   with_loader_accounts(&overlay_accounts(&[user, &[(pk, acct)]]))
+}
+
+/// Like [`with_ix_sysvar_and_loaders`] but ensures Clock sysvar is present with current `mollusk` sysvar state.
+pub fn with_ix_sysvar_clock_and_loaders(
+   ix: &Instruction,
+   mollusk: &Mollusk,
+   user: &[(Pubkey, Account)],
+) -> Vec<(Pubkey, Account)> {
+   let (pk, acct) = mollusk.sysvars.keyed_account_for_clock_sysvar();
+   let user_clock = overlay_accounts(&[user, &[(pk, acct)]]);
+   with_ix_sysvar_and_loaders(ix, &user_clock)
 }
 
 /// Loader v3 program stubs for vault + test_program when their ids appear as accounts (after user placeholders).
@@ -144,18 +178,15 @@ pub fn decode_user_vault(data: &[u8]) -> Option<DecodedVault> {
    if data[0] != app_specific_delegated_vaults::constants::USER_VAULT_DISCRIMINATOR {
       return None;
    }
-   let mut o = 1usize;
+   let bump = data[1];
+   let ata_count = u16::from_le_bytes(data[2..4].try_into().ok()?);
+   let delegate_expires = u32::from_le_bytes(data[4..8].try_into().ok()?);
+   let mut o = 8usize;
    let owner = Pubkey::new_from_array(data[o..o + 32].try_into().ok()?);
    o += 32;
    let app_address = Pubkey::new_from_array(data[o..o + 32].try_into().ok()?);
    o += 32;
    let delegate = Pubkey::new_from_array(data[o..o + 32].try_into().ok()?);
-   o += 32;
-   let delegate_expires = u32::from_le_bytes(data[o..o + 4].try_into().ok()?);
-   o += 4;
-   let ata_count = u16::from_le_bytes(data[o..o + 2].try_into().ok()?);
-   o += 2;
-   let bump = data[o];
    Some(DecodedVault {
       owner,
       app_address,
@@ -301,28 +332,89 @@ pub fn merge_accounts(prev: &[(Pubkey, Account)], res: &InstructionResult) -> Ve
 
 static CU_REPORT_MUTEX: Mutex<()> = Mutex::new(());
 
-/// When `VAULT_LOG_CU` is `1` or `true`, print Mollusk’s `compute_units_consumed` for this instruction.
-///
-/// When `VAULT_CU_REPORT` is set to a file path, append a tab-separated line: `label<TAB>compute_units`
-/// (safe under parallel tests via a mutex). Truncate/remove the file before a full run if you want a fresh report.
-///
-/// That value is the **total CU for the whole simulated step**, including CPIs (Token, System, ATA, etc.),
-/// not an isolated “vault .so only” number. Use it to compare before/after optimizations for the same test.
-pub fn log_cu(label: &str, result: &InstructionResult) {
+fn vault_log_cu_enabled() -> bool {
+   match std::env::var("VAULT_LOG_CU") {
+      Ok(v) => v == "1" || v.eq_ignore_ascii_case("true"),
+      Err(_) => false,
+   }
+}
+
+fn append_cu_report_line(label: &str, compute_units: u64) {
    if let Ok(path) = std::env::var("VAULT_CU_REPORT") {
       let _lock = CU_REPORT_MUTEX.lock().expect("cu report mutex");
       if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
-         let _ = writeln!(f, "{}\t{}", label, result.compute_units_consumed);
+         let _ = writeln!(f, "{}\t{}", label, compute_units);
       }
    }
-   let on = match std::env::var("VAULT_LOG_CU") {
-      Ok(v) => v == "1" || v.eq_ignore_ascii_case("true"),
-      Err(_) => false,
-   };
-   if on {
+}
+
+/// Top-level `test_program` no-op (discriminator 7) for CPI / caller-shell baselines.
+pub fn ix_test_bench_noop_top() -> Vec<u8> {
+   vec![test_program::TestProgramInstruction::BenchNoopTopLevel as u8]
+}
+
+/// Setup / fixture steps: **never** written to `VAULT_CU_REPORT` (keeps bench TSV focused on the ix under test).
+/// Still honors `VAULT_LOG_CU` for local debugging.
+pub fn log_cu_setup(label: &str, result: &InstructionResult) {
+   if vault_log_cu_enabled() {
       eprintln!(
-         "vault CU [{label}]: {} (instruction + all CPIs in this step)",
+         "vault CU [setup {label}]: {} (instruction + all CPIs in this step)",
          result.compute_units_consumed
+      );
+   }
+}
+
+/// Bench step: append `label<TAB>compute_units` when `VAULT_CU_REPORT` is set (mutex-safe).
+///
+/// `compute_units_consumed` is the **total CU for the whole simulated step** (all programs + CPIs).
+pub fn log_cu_bench(label: &str, result: &InstructionResult) {
+   append_cu_report_line(label, result.compute_units_consumed);
+   if vault_log_cu_enabled() {
+      eprintln!(
+         "vault CU [bench {label}]: {} (instruction + all CPIs in this step)",
+         result.compute_units_consumed
+      );
+   }
+}
+
+/// `app_ix` attribution: `inner_noop` = same vault ix with inner data `BenchNoopInner` and **no** inner accounts
+/// (vault CPI shell + trivial app); `full` = real inner app work. Writes:
+/// - `{label_base}:bench_total` — full path
+/// - `{label_base}:cu_vault_invoke_shell` — noop-inner path (vault + CPI into empty app)
+/// - `{label_base}:cu_inner_app_delta` — `full − shell` (extra CU from real inner ix, mostly app + nested CPIs)
+pub fn log_cu_bench_app_ix_split(label_base: &str, inner_noop: &InstructionResult, full: &InstructionResult) {
+   let shell = inner_noop.compute_units_consumed;
+   let total = full.compute_units_consumed;
+   let delta = total.saturating_sub(shell);
+   append_cu_report_line(&format!("{label_base}:bench_total"), total);
+   append_cu_report_line(&format!("{label_base}:cu_vault_invoke_shell"), shell);
+   append_cu_report_line(&format!("{label_base}:cu_inner_app_delta"), delta);
+   if vault_log_cu_enabled() {
+      eprintln!(
+         "vault CU [bench {label_base}] app_ix split: total={total} vault_invoke_shell={shell} inner_app_delta={delta}"
+      );
+   }
+}
+
+/// CPI through `test_program`: `caller_noop` = top-level [`ix_test_bench_noop_top`] only; `full` = wrapper + vault + CPIs.
+/// Writes:
+/// - `{label_base}:bench_total`
+/// - `{label_base}:cu_caller_shell_min` — minimal `test_program` top-level frame
+/// - `{label_base}:cu_below_caller_shell` — `full − shell` (vault subtree, SPL/System CPIs, and extra wrapper work)
+pub fn log_cu_bench_cpi_via_caller_split(
+   label_base: &str,
+   caller_noop: &InstructionResult,
+   full: &InstructionResult,
+) {
+   let shell = caller_noop.compute_units_consumed;
+   let total = full.compute_units_consumed;
+   let delta = total.saturating_sub(shell);
+   append_cu_report_line(&format!("{label_base}:bench_total"), total);
+   append_cu_report_line(&format!("{label_base}:cu_caller_shell_min"), shell);
+   append_cu_report_line(&format!("{label_base}:cu_below_caller_shell"), delta);
+   if vault_log_cu_enabled() {
+      eprintln!(
+         "vault CU [bench {label_base}] cpi split: total={total} caller_shell_min={shell} below_caller_shell={delta}"
       );
    }
 }

@@ -1,8 +1,9 @@
 use crate::common::{
-   associated_token_address, custom_vault_err, derive_user_vault, fresh_mollusk, ix_create, ix_cpi_entry,
-   ix_deposit, ix_test_cpi_entry_dual_via_vault, ix_test_deposit_via_cpi, log_cu, merge_accounts, mint_account,
-   signer_account, system_program_meta, test_program_id, token_account, token_program_id,
-   vault_program_id, with_ix_sysvar_and_loaders,
+   associated_token_address, clock_sysvar_pk, custom_vault_err, derive_user_vault, fresh_mollusk, ix_create,
+   ix_cpi_entry, ix_deposit, ix_test_bench_noop_top, ix_test_cpi_entry_dual_via_vault, ix_test_deposit_via_cpi,
+   log_cu_bench, log_cu_bench_cpi_via_caller_split, merge_accounts, mint_account, rent_sysvar_account,
+   rent_sysvar_pk, signer_account, system_program_meta, test_program_id, token_account, token_program_id,
+   vault_program_id, with_ix_sysvar_and_loaders, with_ix_sysvar_clock_and_loaders,
 };
 use mollusk_svm::result::Check;
 use mollusk_svm_programs_token::{associated_token, token};
@@ -24,7 +25,6 @@ fn funded_vault_for_cpi() -> (
    Pubkey,
    Pubkey,
    Pubkey,
-   Pubkey,
 ) {
    let mollusk = fresh_mollusk();
    let owner = Pubkey::new_unique();
@@ -37,6 +37,7 @@ fn funded_vault_for_cpi() -> (
    let source_acct = token_account(&mint_pk, &owner, 5_000_000);
    let vault_ata = associated_token_address(&pda, &mint_pk);
    let (sys_pk, sys_acct) = system_program_meta();
+   let (rent_pk, rent_acct) = rent_sysvar_account(&mollusk);
    let tok = token_program_id();
    let ata = associated_token::ID;
 
@@ -45,6 +46,7 @@ fn funded_vault_for_cpi() -> (
       (pda, Account::default()),
       (app, Account::default()),
       (delegate, Account::default()),
+      (rent_pk, rent_acct),
       (sys_pk, sys_acct.clone()),
    ];
    let create_ix = Instruction::new_with_bytes(
@@ -55,6 +57,7 @@ fn funded_vault_for_cpi() -> (
          AccountMeta::new(pda, false),
          AccountMeta::new_readonly(app, false),
          AccountMeta::new_readonly(delegate, false),
+         AccountMeta::new_readonly(rent_sysvar_pk(), false),
          AccountMeta::new_readonly(sys_pk, false),
       ],
    );
@@ -88,12 +91,12 @@ fn funded_vault_for_cpi() -> (
       ],
    );
    let r1 = mollusk.process_and_validate_instruction(&dep_ix, &merged, &[Check::success()]);
-   (mollusk, r1, owner, app, delegate, pda, vault_ata, mint_pk, tok, sys_pk)
+   (mollusk, r1, owner, app, delegate, pda, vault_ata, mint_pk, tok)
 }
 
 #[test]
 fn cpi_entry_success_spl_only_via_test_program() {
-   let (mollusk, r1, owner, app, delegate, pda, vault_ata, mint_pk, tok, sys_pk) = funded_vault_for_cpi();
+   let (mollusk, r1, owner, app, delegate, pda, vault_ata, mint_pk, tok) = funded_vault_for_cpi();
    let lamports_dest = Pubkey::new_unique();
    let dest_owner = Pubkey::new_unique();
    let dest_ata = associated_token_address(&dest_owner, &mint_pk);
@@ -113,7 +116,7 @@ fn cpi_entry_success_spl_only_via_test_program() {
          AccountMeta::new_readonly(mint_pk, false),
          AccountMeta::new_readonly(tok, false),
          AccountMeta::new_readonly(solana_instructions_sysvar::ID, false),
-         AccountMeta::new_readonly(sys_pk, false),
+         AccountMeta::new_readonly(clock_sysvar_pk(), false),
       ],
    );
 
@@ -127,9 +130,15 @@ fn cpi_entry_success_spl_only_via_test_program() {
       (dest_ata, token_account(&mint_pk, &dest_owner, 0)),
       (mint_pk, mint_account(owner, 0)),
       (tok, token::keyed_account().1),
-      (sys_pk, system_program_meta().1),
    ];
-   let merged_cpi = with_ix_sysvar_and_loaders(&cpi_ix, &merge_accounts(&user, &r1));
+   let merged_cpi = with_ix_sysvar_clock_and_loaders(&cpi_ix, &mollusk, &merge_accounts(&user, &r1));
+
+   let stub_ix = Instruction::new_with_bytes(test_program_id(), &ix_test_bench_noop_top(), vec![]);
+   let r_stub = mollusk.process_and_validate_instruction(
+      &stub_ix,
+      &with_ix_sysvar_and_loaders(&stub_ix, &[]),
+      &[Check::success()],
+   );
 
    let lamports_before = merged_cpi
       .iter()
@@ -138,7 +147,7 @@ fn cpi_entry_success_spl_only_via_test_program() {
       .1
       .lamports;
    let r2 = mollusk.process_and_validate_instruction(&cpi_ix, &merged_cpi, &[Check::success()]);
-   log_cu("cpi_entry::cpi_entry_success_spl_only_via_test_program", &r2);
+   log_cu_bench_cpi_via_caller_split("cpi_entry::cpi_entry_success_spl_only_via_test_program", &r_stub, &r2);
    let lamports_after = r2.get_account(&lamports_dest).unwrap().lamports;
    assert_eq!(lamports_before, lamports_after);
    let d_bal = SplTokenAccount::unpack(&r2.get_account(&dest_ata).unwrap().data)
@@ -149,7 +158,7 @@ fn cpi_entry_success_spl_only_via_test_program() {
 
 #[test]
 fn cpi_entry_success_native_and_spl_via_test_program() {
-   let (mollusk, r1, owner, app, delegate, pda, vault_ata, mint_pk, tok, sys_pk) = funded_vault_for_cpi();
+   let (mollusk, r1, owner, app, delegate, pda, vault_ata, mint_pk, tok) = funded_vault_for_cpi();
    let lamports_dest = Pubkey::new_unique();
    let dest_owner = Pubkey::new_unique();
    let dest_ata = associated_token_address(&dest_owner, &mint_pk);
@@ -171,7 +180,7 @@ fn cpi_entry_success_native_and_spl_via_test_program() {
          AccountMeta::new_readonly(mint_pk, false),
          AccountMeta::new_readonly(tok, false),
          AccountMeta::new_readonly(solana_instructions_sysvar::ID, false),
-         AccountMeta::new_readonly(sys_pk, false),
+         AccountMeta::new_readonly(clock_sysvar_pk(), false),
       ],
    );
 
@@ -185,9 +194,8 @@ fn cpi_entry_success_native_and_spl_via_test_program() {
       (dest_ata, token_account(&mint_pk, &dest_owner, 0)),
       (mint_pk, mint_account(owner, 0)),
       (tok, token::keyed_account().1),
-      (sys_pk, system_program_meta().1),
    ];
-   let mut merged_cpi = with_ix_sysvar_and_loaders(&dual_ix, &merge_accounts(&user, &r1));
+   let mut merged_cpi = with_ix_sysvar_clock_and_loaders(&dual_ix, &mollusk, &merge_accounts(&user, &r1));
    let rent = mollusk.sysvars.rent.minimum_balance(app_specific_delegated_vaults::state::UserVaultAccount::LEN);
    for (k, a) in merged_cpi.iter_mut() {
       if k == &pda {
@@ -195,9 +203,20 @@ fn cpi_entry_success_native_and_spl_via_test_program() {
       }
    }
 
+   let stub_ix = Instruction::new_with_bytes(test_program_id(), &ix_test_bench_noop_top(), vec![]);
+   let r_stub = mollusk.process_and_validate_instruction(
+      &stub_ix,
+      &with_ix_sysvar_and_loaders(&stub_ix, &[]),
+      &[Check::success()],
+   );
+
    let lamports_before = merged_cpi.iter().find(|(k, _)| k == &lamports_dest).unwrap().1.lamports;
    let r2 = mollusk.process_and_validate_instruction(&dual_ix, &merged_cpi, &[Check::success()]);
-   log_cu("cpi_entry::cpi_entry_success_native_and_spl_via_test_program", &r2);
+   log_cu_bench_cpi_via_caller_split(
+      "cpi_entry::cpi_entry_success_native_and_spl_via_test_program",
+      &r_stub,
+      &r2,
+   );
    let lamports_after = r2.get_account(&lamports_dest).unwrap().lamports;
    assert_eq!(lamports_after, lamports_before);
    let spl = SplTokenAccount::unpack(&r2.get_account(&dest_ata).unwrap().data)
@@ -218,7 +237,6 @@ fn cpi_entry_fails_both_amounts_zero() {
    let vault_ata = Pubkey::new_unique();
    let lamports_dest = Pubkey::new_unique();
    let dest_ata = Pubkey::new_unique();
-   let (sys_pk, sys_acct) = system_program_meta();
    let ix = Instruction::new_with_bytes(
       vault_program_id(),
       &ix_cpi_entry(0, 0),
@@ -233,7 +251,7 @@ fn cpi_entry_fails_both_amounts_zero() {
          AccountMeta::new_readonly(mint_pk, false),
          AccountMeta::new_readonly(tok, false),
          AccountMeta::new_readonly(solana_instructions_sysvar::ID, false),
-         AccountMeta::new_readonly(sys_pk, false),
+         AccountMeta::new_readonly(clock_sysvar_pk(), false),
       ],
    );
    let user = vec![
@@ -246,16 +264,15 @@ fn cpi_entry_fails_both_amounts_zero() {
       (dest_ata, Account::default()),
       (mint_pk, Account::default()),
       (tok, token::keyed_account().1),
-      (sys_pk, sys_acct),
    ];
-   let accounts = with_ix_sysvar_and_loaders(&ix, &user);
+   let accounts = with_ix_sysvar_clock_and_loaders(&ix, &mollusk, &user);
    let r = mollusk.process_and_validate_instruction(&ix, &accounts, &[Check::err(ProgramError::InvalidInstructionData)]);
-   log_cu("cpi_entry::cpi_entry_fails_both_amounts_zero", &r);
+   log_cu_bench("cpi_entry::cpi_entry_fails_both_amounts_zero", &r);
 }
 
 #[test]
 fn cpi_entry_fails_direct_vault_top_level() {
-   let (mollusk, r1, owner, app, delegate, pda, vault_ata, mint_pk, tok, sys_pk) = funded_vault_for_cpi();
+   let (mollusk, r1, owner, app, delegate, pda, vault_ata, mint_pk, tok) = funded_vault_for_cpi();
    let lamports_dest = Pubkey::new_unique();
    let dest_owner = Pubkey::new_unique();
    let dest_ata = associated_token_address(&dest_owner, &mint_pk);
@@ -273,7 +290,7 @@ fn cpi_entry_fails_direct_vault_top_level() {
          AccountMeta::new_readonly(mint_pk, false),
          AccountMeta::new_readonly(tok, false),
          AccountMeta::new_readonly(solana_instructions_sysvar::ID, false),
-         AccountMeta::new_readonly(sys_pk, false),
+         AccountMeta::new_readonly(clock_sysvar_pk(), false),
       ],
    );
    let user = vec![
@@ -286,20 +303,19 @@ fn cpi_entry_fails_direct_vault_top_level() {
       (dest_ata, token_account(&mint_pk, &dest_owner, 0)),
       (mint_pk, mint_account(owner, 0)),
       (tok, token::keyed_account().1),
-      (sys_pk, system_program_meta().1),
    ];
-   let merged = with_ix_sysvar_and_loaders(&ix, &merge_accounts(&user, &r1));
+   let merged = with_ix_sysvar_clock_and_loaders(&ix, &mollusk, &merge_accounts(&user, &r1));
    let r = mollusk.process_and_validate_instruction(
       &ix,
       &merged,
       &[Check::err(custom_vault_err(Error::UnauthorizedCpiCaller))],
    );
-   log_cu("cpi_entry::cpi_entry_fails_direct_vault_top_level", &r);
+   log_cu_bench("cpi_entry::cpi_entry_fails_direct_vault_top_level", &r);
 }
 
 #[test]
 fn cpi_entry_fails_delegate_mismatch() {
-   let (mollusk, r1, owner, app, _delegate, pda, vault_ata, mint_pk, tok, sys_pk) = funded_vault_for_cpi();
+   let (mollusk, r1, owner, app, _delegate, pda, vault_ata, mint_pk, tok) = funded_vault_for_cpi();
    let wrong = Pubkey::new_unique();
    let lamports_dest = Pubkey::new_unique();
    let dest_owner = Pubkey::new_unique();
@@ -319,7 +335,7 @@ fn cpi_entry_fails_delegate_mismatch() {
          AccountMeta::new_readonly(mint_pk, false),
          AccountMeta::new_readonly(tok, false),
          AccountMeta::new_readonly(solana_instructions_sysvar::ID, false),
-         AccountMeta::new_readonly(sys_pk, false),
+         AccountMeta::new_readonly(clock_sysvar_pk(), false),
       ],
    );
    let user = vec![
@@ -332,20 +348,19 @@ fn cpi_entry_fails_delegate_mismatch() {
       (dest_ata, token_account(&mint_pk, &dest_owner, 0)),
       (mint_pk, mint_account(owner, 0)),
       (tok, token::keyed_account().1),
-      (sys_pk, system_program_meta().1),
    ];
-   let merged = with_ix_sysvar_and_loaders(&cpi_ix, &merge_accounts(&user, &r1));
+   let merged = with_ix_sysvar_clock_and_loaders(&cpi_ix, &mollusk, &merge_accounts(&user, &r1));
    let r = mollusk.process_and_validate_instruction(
       &cpi_ix,
       &merged,
       &[Check::err(custom_vault_err(Error::InvalidUserVaultDelegate))],
    );
-   log_cu("cpi_entry::cpi_entry_fails_delegate_mismatch", &r);
+   log_cu_bench("cpi_entry::cpi_entry_fails_delegate_mismatch", &r);
 }
 
 #[test]
 fn cpi_entry_fails_not_enough_accounts() {
-   let (mollusk, r1, owner, app, delegate, pda, vault_ata, mint_pk, tok, _sys) = funded_vault_for_cpi();
+   let (mollusk, r1, owner, app, delegate, pda, vault_ata, mint_pk, tok) = funded_vault_for_cpi();
    let x1 = Pubkey::new_unique();
    let x2 = Pubkey::new_unique();
    let x3 = Pubkey::new_unique();
@@ -383,5 +398,5 @@ fn cpi_entry_fails_not_enough_accounts() {
       &merged,
       &[Check::err(ProgramError::NotEnoughAccountKeys)],
    );
-   log_cu("cpi_entry::cpi_entry_fails_not_enough_accounts", &r);
+   log_cu_bench("cpi_entry::cpi_entry_fails_not_enough_accounts", &r);
 }

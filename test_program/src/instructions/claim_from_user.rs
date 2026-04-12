@@ -16,7 +16,7 @@ use pinocchio::{
 };
 use pinocchio_log::log;
 
-pub fn process(program_id: &Address, accounts: &[AccountView], data: &[u8]) -> ProgramResult {
+pub fn process(program_id: &Address, accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
    let amount = parse_u64_instruction_data(data).map_err(|e| {
       log!("claim_from_user: bad amount");
       e

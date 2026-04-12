@@ -5,7 +5,7 @@ use solana_pubkey::Pubkey;
 
 use crate::constants::{
    ASSOCIATED_TOKEN_PROGRAM_ID, DEFAULT_VAULT_PROGRAM_ID, SPL_TOKEN_PROGRAM_ID, SYSTEM_PROGRAM_ID,
-   SYSVAR_INSTRUCTIONS_ID,
+   SYSVAR_CLOCK_ID, SYSVAR_INSTRUCTIONS_ID,
 };
 use crate::error::VaultSdkError;
 
@@ -160,17 +160,15 @@ pub fn withdraw_user_vault_ix(
    })
 }
 
-/// `WithdrawUserVaultNative` — 4 accounts: owner (signer, writable), user_vault_pda (writable), app, system program. Data: discriminator + `amount` u64 LE.
+/// `WithdrawUserVaultNative` — 3 accounts: owner (signer, writable), user_vault_pda (writable), app. Data: discriminator + `amount` u64 LE.
 pub fn withdraw_user_vault_native_ix(
    program_id: &Pubkey,
    owner: &Pubkey,
    user_vault_pda: &Pubkey,
    app_address: &Pubkey,
-   system_program: Option<&Pubkey>,
    amount: u64,
 ) -> Result<Instruction, VaultSdkError> {
    require_positive_amount(amount)?;
-   let system = system_program.copied().unwrap_or(SYSTEM_PROGRAM_ID);
    let mut data = Vec::with_capacity(9);
    data.push(VaultInstructionKind::WithdrawUserVaultNative as u8);
    data.extend_from_slice(&amount.to_le_bytes());
@@ -180,7 +178,6 @@ pub fn withdraw_user_vault_native_ix(
          AccountMeta::new(*owner, true),
          AccountMeta::new(*user_vault_pda, false),
          AccountMeta::new_readonly(*app_address, false),
-         AccountMeta::new_readonly(system, false),
       ],
       data,
    })
@@ -234,12 +231,12 @@ pub fn cpi_entry_account_metas(
    amount_native: u64,
    amount: u64,
    instructions_sysvar: Option<&Pubkey>,
-   system_program: Option<&Pubkey>,
+   clock_sysvar: Option<&Pubkey>,
 ) -> Vec<AccountMeta> {
    let w_native = amount_native > 0;
    let w_spl = amount > 0;
    let ixs = instructions_sysvar.copied().unwrap_or(SYSVAR_INSTRUCTIONS_ID);
-   let sys = system_program.copied().unwrap_or(SYSTEM_PROGRAM_ID);
+   let clock = clock_sysvar.copied().unwrap_or(SYSVAR_CLOCK_ID);
    vec![
       AccountMeta::new(*delegate, true),
       AccountMeta::new_readonly(*owner, false),
@@ -267,7 +264,7 @@ pub fn cpi_entry_account_metas(
       AccountMeta::new_readonly(*mint, false),
       AccountMeta::new_readonly(*token_program, false),
       AccountMeta::new_readonly(ixs, false),
-      AccountMeta::new_readonly(sys, false),
+      AccountMeta::new_readonly(clock, false),
    ]
 }
 
@@ -286,7 +283,7 @@ pub fn cpi_entry_ix(
    amount_native: u64,
    amount: u64,
    instructions_sysvar: Option<&Pubkey>,
-   system_program: Option<&Pubkey>,
+   clock_sysvar: Option<&Pubkey>,
 ) -> Result<Instruction, VaultSdkError> {
    require_cpi_entry_amounts(amount_native, amount)?;
    let accounts = cpi_entry_account_metas(
@@ -302,7 +299,7 @@ pub fn cpi_entry_ix(
       amount_native,
       amount,
       instructions_sysvar,
-      system_program,
+      clock_sysvar,
    );
    let mut data = Vec::with_capacity(17);
    data.push(VaultInstructionKind::CpiEntry as u8);
@@ -323,10 +320,10 @@ pub fn cpi_entry_native_account_metas(
    app_address: &Pubkey,
    lamports_dest: &Pubkey,
    instructions_sysvar: Option<&Pubkey>,
-   system_program: Option<&Pubkey>,
+   clock_sysvar: Option<&Pubkey>,
 ) -> Vec<AccountMeta> {
    let ixs = instructions_sysvar.copied().unwrap_or(SYSVAR_INSTRUCTIONS_ID);
-   let sys = system_program.copied().unwrap_or(SYSTEM_PROGRAM_ID);
+   let clock = clock_sysvar.copied().unwrap_or(SYSVAR_CLOCK_ID);
    vec![
       AccountMeta::new(*delegate, true),
       AccountMeta::new_readonly(*owner, false),
@@ -334,7 +331,7 @@ pub fn cpi_entry_native_account_metas(
       AccountMeta::new_readonly(*app_address, false),
       AccountMeta::new(*lamports_dest, false),
       AccountMeta::new_readonly(ixs, false),
-      AccountMeta::new_readonly(sys, false),
+      AccountMeta::new_readonly(clock, false),
    ]
 }
 
@@ -348,7 +345,7 @@ pub fn cpi_entry_native_ix(
    lamports_dest: &Pubkey,
    amount_native: u64,
    instructions_sysvar: Option<&Pubkey>,
-   system_program: Option<&Pubkey>,
+   clock_sysvar: Option<&Pubkey>,
 ) -> Result<Instruction, VaultSdkError> {
    require_positive_amount(amount_native)?;
    let accounts = cpi_entry_native_account_metas(
@@ -358,7 +355,7 @@ pub fn cpi_entry_native_ix(
       app_address,
       lamports_dest,
       instructions_sysvar,
-      system_program,
+      clock_sysvar,
    );
    let mut data = Vec::with_capacity(9);
    data.push(VaultInstructionKind::CpiEntryNative as u8);

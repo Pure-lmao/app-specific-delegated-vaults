@@ -10,13 +10,16 @@
 
 use crate::{
    error::Error,
-   helpers::{close_program_account_lamports_to, load_user_vault, require_signer},
+   helpers::{
+      assert_user_vault_is_owned_by_program_and_correct_length, close_program_account_lamports_to,
+      get_vault_ata_count, require_signer, verify_vault_owner_and_app_address,
+   },
 };
-use pinocchio::{error::ProgramError, AccountView, Address, ProgramResult, hint::unlikely};
+use pinocchio::{error::ProgramError, AccountView, ProgramResult, hint::unlikely};
 use pinocchio_log::log;
 
 #[inline(never)]
-pub fn process(program_id: &Address, accounts: &[AccountView]) -> ProgramResult {
+pub fn process(accounts: &mut [AccountView]) -> ProgramResult {
    let [
       owner,
       user_vault_pda,
@@ -28,9 +31,10 @@ pub fn process(program_id: &Address, accounts: &[AccountView]) -> ProgramResult 
 
    require_signer(owner)?;
 
-   let vault = load_user_vault(program_id, user_vault_pda, owner.address(), app_address.address())?;
+   assert_user_vault_is_owned_by_program_and_correct_length(user_vault_pda)?;
+   verify_vault_owner_and_app_address(user_vault_pda, owner.address(), app_address.address())?;
 
-   if unlikely(vault.ata_count != 0) {
+   if unlikely(get_vault_ata_count(user_vault_pda) != 0) {
       log!("close_user_vault: ata_count must be zero");
       return Err(Error::UserVaultHasOpenAtas.into());
    }

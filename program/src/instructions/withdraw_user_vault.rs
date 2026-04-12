@@ -15,20 +15,19 @@
 use crate::{
    constants::USER_VAULT_SEED,
    helpers::{
-      assert_spl_token_program, invoke_token_transfer_checked, load_user_vault, parse_u64_instruction_data, require_signer,
-      verify_token_account,
+      assert_spl_token_program, assert_user_vault_is_owned_by_program_and_correct_length, get_vault_bump, invoke_token_transfer_checked_with_decimals, mint_base_decimals, parse_u64_instruction_data, require_signer, verify_token_account, verify_vault_owner_and_app_address,
    },
 };
 use pinocchio::{
    cpi::{Seed, Signer},
    error::ProgramError,
-   AccountView, Address, ProgramResult,
+   AccountView, ProgramResult,
    hint::unlikely,
 };
 use pinocchio_log::log;
 
 #[inline(never)]
-pub fn process(program_id: &Address, accounts: &[AccountView], data: &[u8]) -> ProgramResult {
+pub fn process(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
    let amount = parse_u64_instruction_data(data).map_err(|e| {
       log!("withdraw_user_vault: invalid instruction data");
       e
@@ -54,12 +53,17 @@ pub fn process(program_id: &Address, accounts: &[AccountView], data: &[u8]) -> P
    require_signer(owner)?;
    assert_spl_token_program(token_program)?;
 
-   let vault_state = load_user_vault(program_id, user_vault_pda, owner.address(), app_address.address())?;
-
+   assert_user_vault_is_owned_by_program_and_correct_length(user_vault_pda)?;
    verify_token_account(dest_ata, token_program, owner.address(), mint.address())?;
-   verify_token_account(user_vault_ata, token_program, user_vault_pda.address(), mint.address())?;
+   verify_vault_owner_and_app_address(user_vault_pda, owner.address(), app_address.address())?;
+   let vault_bump = get_vault_bump(user_vault_pda);
 
-   let bump_seed = [vault_state.bump];
+   let decimals = mint_base_decimals(mint).map_err(|e| {
+      log!("withdraw_user_vault: mint decimals read failed");
+      e
+   })?;
+
+   let bump_seed = [vault_bump];
    let signer_seeds = [
       Seed::from(USER_VAULT_SEED),
       Seed::from(owner.address().as_ref()),
@@ -68,7 +72,7 @@ pub fn process(program_id: &Address, accounts: &[AccountView], data: &[u8]) -> P
    ];
    let signers = [Signer::from(&signer_seeds[..])];
 
-   invoke_token_transfer_checked(
+   invoke_token_transfer_checked_with_decimals(
       token_program,
       mint,
       user_vault_ata,
@@ -76,7 +80,9 @@ pub fn process(program_id: &Address, accounts: &[AccountView], data: &[u8]) -> P
       user_vault_pda,
       amount,
       &signers,
-   ).map_err(|e| {
+      decimals,
+   )
+   .map_err(|e| {
       log!("withdraw_user_vault: transfer cpi failed");
       e
    })?;

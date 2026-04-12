@@ -11,7 +11,11 @@ use pinocchio::{
 use pinocchio_associated_token_account::check_id as ASSOCIATED_TOKEN_PROGRAM_CHECK_ID;
 use pinocchio_log::log;
 use pinocchio_system::check_id as SYSTEM_PROGRAM_CHECK_ID;
-use pinocchio_token::{check_id as SPL_TOKEN_PROGRAM_CHECK_ID, instructions::TransferChecked, state::{Mint, TokenAccount}};
+use pinocchio_token::{
+   check_id as SPL_TOKEN_PROGRAM_CHECK_ID,
+   instructions::TransferChecked,
+   state::{Account as SplTokenAccountState, Mint},
+};
 use pinocchio_token_2022::{check_id as TOKEN_2022_PROGRAM_CHECK_ID, instructions::TransferChecked as TransferChecked2022};
 
 #[inline]
@@ -36,19 +40,19 @@ pub fn assert_spl_token_program(program: &AccountView) -> Result<(), Error> {
 pub fn borrow_token_account<'a>(
    account: &'a AccountView,
    token_program: &AccountView,
-) -> Result<Ref<'a, TokenAccount>, Error> {
+) -> Result<Ref<'a, SplTokenAccountState>, Error> {
    assert_spl_token_program(token_program)?;
    if !account.owned_by(token_program.address()) {
       log!("token account: owner program mismatch");
       return Err(Error::InvalidAta);
    }
    let data = account.try_borrow().map_err(|_| Error::InvalidAta)?;
-   if data.len() < TokenAccount::LEN {
+   if data.len() < SplTokenAccountState::LEN {
       log!("token account: data too short");
       return Err(Error::InvalidAta);
    }
    Ok(Ref::map(data, |d| unsafe {
-      TokenAccount::from_bytes_unchecked(&d[..TokenAccount::LEN])
+      SplTokenAccountState::from_bytes_unchecked(&d[..SplTokenAccountState::LEN])
    }))
 }
 
@@ -140,10 +144,10 @@ pub fn treasury_ata_exists(
       Ok(d) => d,
       Err(_) => return Ok(false),
    };
-   if data.len() < TokenAccount::LEN {
+   if data.len() < SplTokenAccountState::LEN {
       return Ok(false);
    }
-   let token_account = unsafe { TokenAccount::from_bytes_unchecked(&data[..TokenAccount::LEN]) };
+   let token_account = unsafe { SplTokenAccountState::from_bytes_unchecked(&data[..SplTokenAccountState::LEN]) };
    if !token_account.is_initialized() {
       return Ok(false);
    }
@@ -167,15 +171,7 @@ pub fn invoke_token_transfer_checked(
 ) -> ProgramResult {
    let decimals = mint_decimals(mint, token_program).map_err(ProgramError::from)?;
    if SPL_TOKEN_PROGRAM_CHECK_ID(token_program.address()) {
-      TransferChecked {
-         from,
-         mint,
-         to,
-         authority,
-         amount,
-         decimals,
-      }
-      .invoke_signed(signers)
+      TransferChecked::new(from, mint, to, authority, amount, decimals).invoke_signed(signers)
    } else {
       TransferChecked2022 {
          from,

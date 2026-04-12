@@ -1,7 +1,8 @@
 use crate::common::{
-   custom_vault_err, derive_user_vault, fresh_mollusk, ix_cpi_entry_native, ix_create, ix_test_cpi_entry_native_via_vault,
-   log_cu, merge_accounts, signer_account, system_program_meta, test_program_id, vault_program_id,
-   with_ix_sysvar_and_loaders,
+   clock_sysvar_pk, custom_vault_err, derive_user_vault, fresh_mollusk, ix_cpi_entry_native, ix_create,
+   ix_test_bench_noop_top, ix_test_cpi_entry_native_via_vault, log_cu_bench, log_cu_bench_cpi_via_caller_split,
+   log_cu_setup, merge_accounts, rent_sysvar_account, rent_sysvar_pk, signer_account, system_program_meta,
+   test_program_id, vault_program_id, with_ix_sysvar_and_loaders, with_ix_sysvar_clock_and_loaders,
 };
 use mollusk_svm::result::Check;
 use solana_account::Account;
@@ -20,12 +21,14 @@ fn cpi_entry_native_success() {
    let (pda, _) = derive_user_vault(&owner, &app);
    let lamports_dest = Pubkey::new_unique();
    let (sys_pk, sys_acct) = system_program_meta();
+   let (rent_pk, rent_acct) = rent_sysvar_account(&mollusk);
 
    let create_accounts = vec![
       (owner, signer_account(2_000_000_000)),
       (pda, Account::default()),
       (app, Account::default()),
       (delegate, Account::default()),
+      (rent_pk, rent_acct),
       (sys_pk, sys_acct.clone()),
    ];
    let create_ix = Instruction::new_with_bytes(
@@ -36,11 +39,12 @@ fn cpi_entry_native_success() {
          AccountMeta::new(pda, false),
          AccountMeta::new_readonly(app, false),
          AccountMeta::new_readonly(delegate, false),
+         AccountMeta::new_readonly(rent_sysvar_pk(), false),
          AccountMeta::new_readonly(sys_pk, false),
       ],
    );
    let r0 = mollusk.process_and_validate_instruction(&create_ix, &create_accounts, &[Check::success()]);
-   log_cu("cpi_entry_native::cpi_entry_native_success:create", &r0);
+   log_cu_setup("cpi_entry_native::cpi_entry_native_success:create", &r0);
 
    let native_ix = Instruction::new_with_bytes(
       test_program_id(),
@@ -53,7 +57,7 @@ fn cpi_entry_native_success() {
          AccountMeta::new_readonly(app, false),
          AccountMeta::new(lamports_dest, false),
          AccountMeta::new_readonly(solana_instructions_sysvar::ID, false),
-         AccountMeta::new_readonly(sys_pk, false),
+         AccountMeta::new_readonly(clock_sysvar_pk(), false),
       ],
    );
 
@@ -63,19 +67,25 @@ fn cpi_entry_native_success() {
       (pda, Account::default()),
       (app, Account::default()),
       (lamports_dest, Account::default()),
-      (sys_pk, sys_acct.clone()),
    ];
-   let mut merged = with_ix_sysvar_and_loaders(&native_ix, &merge_accounts(&user, &r0));
+   let mut merged = with_ix_sysvar_clock_and_loaders(&native_ix, &mollusk, &merge_accounts(&user, &r0));
    let rent = mollusk.sysvars.rent.minimum_balance(UserVaultAccount::LEN);
    for (k, a) in merged.iter_mut() {
       if k == &pda {
          a.lamports = rent + 500_000;
       }
    }
+   let stub_ix = Instruction::new_with_bytes(test_program_id(), &ix_test_bench_noop_top(), vec![]);
+   let r_stub = mollusk.process_and_validate_instruction(
+      &stub_ix,
+      &with_ix_sysvar_and_loaders(&stub_ix, &[]),
+      &[Check::success()],
+   );
+
    let pda_lamports_before = merged.iter().find(|(k, _)| k == &pda).unwrap().1.lamports;
    let dest_before = merged.iter().find(|(k, _)| k == &lamports_dest).unwrap().1.lamports;
    let r1 = mollusk.process_and_validate_instruction(&native_ix, &merged, &[Check::success()]);
-   log_cu("cpi_entry_native::cpi_entry_native_success:native_cpi", &r1);
+   log_cu_bench_cpi_via_caller_split("cpi_entry_native::cpi_entry_native_success", &r_stub, &r1);
    let pda_after = r1.get_account(&pda).unwrap().lamports;
    let dest_after = r1.get_account(&lamports_dest).unwrap().lamports;
    assert!(dest_after > dest_before);
@@ -85,7 +95,6 @@ fn cpi_entry_native_success() {
 #[test]
 fn cpi_entry_native_fails_zero_amount() {
    let mollusk = fresh_mollusk();
-   let (sys_pk, sys_acct) = system_program_meta();
    let d = Pubkey::new_unique();
    let o = Pubkey::new_unique();
    let p = Pubkey::new_unique();
@@ -102,7 +111,7 @@ fn cpi_entry_native_fails_zero_amount() {
          AccountMeta::new_readonly(app, false),
          AccountMeta::new(l, false),
          AccountMeta::new_readonly(solana_instructions_sysvar::ID, false),
-         AccountMeta::new_readonly(sys_pk, false),
+         AccountMeta::new_readonly(clock_sysvar_pk(), false),
       ],
    );
    let user = vec![
@@ -111,15 +120,14 @@ fn cpi_entry_native_fails_zero_amount() {
       (p, Account::default()),
       (app, Account::default()),
       (l, Account::default()),
-      (sys_pk, sys_acct),
    ];
-   let accounts = with_ix_sysvar_and_loaders(&native_ix, &user);
+   let accounts = with_ix_sysvar_clock_and_loaders(&native_ix, &mollusk, &user);
    let r = mollusk.process_and_validate_instruction(
       &native_ix,
       &accounts,
       &[Check::err(ProgramError::InvalidInstructionData)],
    );
-   log_cu("cpi_entry_native::cpi_entry_native_fails_zero_amount", &r);
+   log_cu_bench("cpi_entry_native::cpi_entry_native_fails_zero_amount", &r);
 }
 
 #[test]
@@ -141,14 +149,16 @@ fn cpi_entry_native_fails_unauthorized_top_level() {
          AccountMeta::new_readonly(app, false),
          AccountMeta::new(lamports_dest, false),
          AccountMeta::new_readonly(solana_instructions_sysvar::ID, false),
-         AccountMeta::new_readonly(sys_pk, false),
+         AccountMeta::new_readonly(clock_sysvar_pk(), false),
       ],
    );
+   let (rent_pk, rent_acct) = rent_sysvar_account(&mollusk);
    let create_accounts = vec![
       (owner, signer_account(2_000_000_000)),
       (pda, Account::default()),
       (app, Account::default()),
       (delegate, Account::default()),
+      (rent_pk, rent_acct),
       (sys_pk, sys_acct.clone()),
    ];
    let create_ix = Instruction::new_with_bytes(
@@ -159,20 +169,20 @@ fn cpi_entry_native_fails_unauthorized_top_level() {
          AccountMeta::new(pda, false),
          AccountMeta::new_readonly(app, false),
          AccountMeta::new_readonly(delegate, false),
+         AccountMeta::new_readonly(rent_sysvar_pk(), false),
          AccountMeta::new_readonly(sys_pk, false),
       ],
    );
    let r0 = mollusk.process_and_validate_instruction(&create_ix, &create_accounts, &[Check::success()]);
-   log_cu("cpi_entry_native::cpi_entry_native_fails_unauthorized_top_level:create", &r0);
+   log_cu_setup("cpi_entry_native::cpi_entry_native_fails_unauthorized_top_level:create", &r0);
    let user = vec![
       (delegate, signer_account(1_000_000_000)),
       (owner, Account::default()),
       (pda, Account::default()),
       (app, Account::default()),
       (lamports_dest, Account::default()),
-      (sys_pk, sys_acct),
    ];
-   let mut merged = with_ix_sysvar_and_loaders(&ix, &merge_accounts(&user, &r0));
+   let mut merged = with_ix_sysvar_clock_and_loaders(&ix, &mollusk, &merge_accounts(&user, &r0));
    let rent = mollusk.sysvars.rent.minimum_balance(UserVaultAccount::LEN);
    for (k, a) in merged.iter_mut() {
       if k == &pda {
@@ -184,7 +194,7 @@ fn cpi_entry_native_fails_unauthorized_top_level() {
       &merged,
       &[Check::err(custom_vault_err(Error::UnauthorizedCpiCaller))],
    );
-   log_cu("cpi_entry_native::cpi_entry_native_fails_unauthorized_top_level:vault_ix", &r);
+   log_cu_bench("cpi_entry_native::cpi_entry_native_fails_unauthorized_top_level:vault_ix", &r);
 }
 
 #[test]
@@ -197,11 +207,13 @@ fn cpi_entry_native_fails_delegate_mismatch() {
    let (pda, _) = derive_user_vault(&owner, &app);
    let lamports_dest = Pubkey::new_unique();
    let (sys_pk, sys_acct) = system_program_meta();
+   let (rent_pk, rent_acct) = rent_sysvar_account(&mollusk);
    let create_accounts = vec![
       (owner, signer_account(2_000_000_000)),
       (pda, Account::default()),
       (app, Account::default()),
       (delegate, Account::default()),
+      (rent_pk, rent_acct),
       (sys_pk, sys_acct.clone()),
    ];
    let create_ix = Instruction::new_with_bytes(
@@ -212,11 +224,12 @@ fn cpi_entry_native_fails_delegate_mismatch() {
          AccountMeta::new(pda, false),
          AccountMeta::new_readonly(app, false),
          AccountMeta::new_readonly(delegate, false),
+         AccountMeta::new_readonly(rent_sysvar_pk(), false),
          AccountMeta::new_readonly(sys_pk, false),
       ],
    );
    let r0 = mollusk.process_and_validate_instruction(&create_ix, &create_accounts, &[Check::success()]);
-   log_cu("cpi_entry_native::cpi_entry_native_fails_delegate_mismatch:create", &r0);
+   log_cu_setup("cpi_entry_native::cpi_entry_native_fails_delegate_mismatch:create", &r0);
    let native_ix = Instruction::new_with_bytes(
       test_program_id(),
       &ix_test_cpi_entry_native_via_vault(10_000),
@@ -228,7 +241,7 @@ fn cpi_entry_native_fails_delegate_mismatch() {
          AccountMeta::new_readonly(app, false),
          AccountMeta::new(lamports_dest, false),
          AccountMeta::new_readonly(solana_instructions_sysvar::ID, false),
-         AccountMeta::new_readonly(sys_pk, false),
+         AccountMeta::new_readonly(clock_sysvar_pk(), false),
       ],
    );
    let user = vec![
@@ -237,9 +250,8 @@ fn cpi_entry_native_fails_delegate_mismatch() {
       (pda, Account::default()),
       (app, Account::default()),
       (lamports_dest, Account::default()),
-      (sys_pk, sys_acct.clone()),
    ];
-   let mut merged = with_ix_sysvar_and_loaders(&native_ix, &merge_accounts(&user, &r0));
+   let mut merged = with_ix_sysvar_clock_and_loaders(&native_ix, &mollusk, &merge_accounts(&user, &r0));
    let rent = mollusk.sysvars.rent.minimum_balance(UserVaultAccount::LEN);
    for (k, a) in merged.iter_mut() {
       if k == &pda {
@@ -251,5 +263,5 @@ fn cpi_entry_native_fails_delegate_mismatch() {
       &merged,
       &[Check::err(custom_vault_err(Error::InvalidUserVaultDelegate))],
    );
-   log_cu("cpi_entry_native::cpi_entry_native_fails_delegate_mismatch:native_cpi", &r);
+   log_cu_bench("cpi_entry_native::cpi_entry_native_fails_delegate_mismatch:native_cpi", &r);
 }

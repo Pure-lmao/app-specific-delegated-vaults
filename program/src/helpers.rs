@@ -1,32 +1,26 @@
-//! Account checks and derivations.
-//!
-//! Helpers that take a `token_program` account assume the caller has already validated it with
-//! [`assert_spl_token_program`] (classic SPL Token or Token-2022).
-//!
-//! Inline policy (SBF ~4KiB stack): `#[inline]` on tiny checks and instruction-data parsers;
-//! `#[inline(never)]` on sysvar work ([`get_time`], [`require_top_level_instruction_is_app`]).
-
 use crate::{
    constants::USER_VAULT_SEED,
    error::Error,
    state::UserVaultAccount, constants::ID,
 };
 
-use pinocchio::{
-   account::Ref,
-   cpi::{invoke_signed, Signer},
-   error::ProgramError,
-   instruction::{InstructionAccount, InstructionView},
-   AccountView, Address, ProgramResult,
-   hint::unlikely,
-   sysvars::{clock::Clock, instructions::Instructions, Sysvar},
-};
-use pinocchio_associated_token_account::check_id as ASSOCIATED_TOKEN_PROGRAM_CHECK_ID;
-use pinocchio_log::log;
-use pinocchio_system::check_id as SYSTEM_PROGRAM_CHECK_ID;
-use pinocchio_token::{check_id as SPL_TOKEN_PROGRAM_CHECK_ID, state::{Mint, TokenAccount}};
-use pinocchio_token_2022::{check_id as TOKEN_2022_PROGRAM_CHECK_ID, instructions::TransferChecked as TransferChecked2022};
+use core::mem::size_of;
+use core::ptr::read;
 
+use pinocchio::{
+   AccountView, Address, ProgramResult, account::Ref, address::address_eq, cpi::{Signer, invoke_signed}, error::ProgramError, hint::unlikely, instruction::{InstructionAccount, InstructionView}, sysvars::{
+      clock::CLOCK_ID, instructions::INSTRUCTIONS_ID, rent::RENT_ID
+   }
+};
+
+use pinocchio_associated_token_account::ID as ASSOCIATED_TOKEN_PROGRAM_ID;
+use pinocchio_log::log;
+use pinocchio_system::ID as SYSTEM_PROGRAM_ID;
+use pinocchio_token::{
+   ID as SPL_TOKEN_PROGRAM_ID,
+   state::{Account as SplTokenAccountState, Mint},
+};
+use pinocchio_token_2022::{ID as TOKEN_2022_PROGRAM_ID, instructions::TransferChecked as TransferChecked2022};
 
 #[inline]
 pub fn require_signer(account: &AccountView) -> Result<(), Error> {
@@ -37,15 +31,34 @@ pub fn require_signer(account: &AccountView) -> Result<(), Error> {
    Ok(())
 }
 
-/// Top-level instruction that started this CPI chain must belong to `app_address`.
-#[inline(never)]
+
+const IX_ACCOUNT_META_STRIDE: usize = 33;
+
+#[inline(always)]
+unsafe fn read_u16_le_bytes(p: *const u8) -> u16 {
+   u16::from_le_bytes([*p, *p.add(1)])
+}
+
+
 pub fn require_top_level_instruction_is_app(
    instructions_sysvar: &AccountView,
    app_address: &AccountView,
 ) -> Result<(), ProgramError> {
-   let ixs = Instructions::try_from(instructions_sysvar)?;
-   let current_ix = ixs.load_instruction_at(ixs.load_current_index() as usize)?;
-   if unlikely(current_ix.get_program_id() != app_address.address()) {
+   if unlikely(!address_eq(instructions_sysvar.address(), &INSTRUCTIONS_ID)) {
+      log!("cpi_entry: bad instructions sysvar (unsafe introspection path)");
+      return Err(ProgramError::UnsupportedSysvar);
+   }
+   let p = instructions_sysvar.data_ptr();
+   let len = instructions_sysvar.data_len();
+   let current = unsafe { read_u16_le_bytes(p.add(len - size_of::<u16>())) } as usize;
+   let ix_start = unsafe {
+      read_u16_le_bytes(p.add(size_of::<u16>() + current * size_of::<u16>()))
+   } as usize;
+   let raw = unsafe { p.add(ix_start) };
+   let num_accounts = unsafe { read_u16_le_bytes(raw) } as usize;
+   let prog_ptr = unsafe { raw.add(size_of::<u16>() + num_accounts * IX_ACCOUNT_META_STRIDE) } as *const Address;
+   let program_id = unsafe { &*prog_ptr };
+   if unlikely(!address_eq(program_id, app_address.address())) {
       log!("cpi_entry: must be invoked via CPI from the app program");
       return Err(Error::UnauthorizedCpiCaller.into());
    }
@@ -56,7 +69,10 @@ pub fn require_top_level_instruction_is_app(
 #[inline]
 pub fn assert_spl_token_program(program: &AccountView) -> Result<(), Error> {
    let id = program.address();
-   if unlikely(!SPL_TOKEN_PROGRAM_CHECK_ID(id) && !TOKEN_2022_PROGRAM_CHECK_ID(id)) {
+   if unlikely(
+      !address_eq(id, &SPL_TOKEN_PROGRAM_ID) && 
+      !address_eq(id, &TOKEN_2022_PROGRAM_ID)
+   ) {
       log!("invalid spl/token-2022 token program");
       return Err(Error::InvalidTokenProgram);
    }
@@ -64,27 +80,28 @@ pub fn assert_spl_token_program(program: &AccountView) -> Result<(), Error> {
 }
 
 /// Borrow the base SPL token account layout; account must be owned by `token_program` (supports extension accounts).
+#[inline]
 pub fn borrow_token_account<'a>(
    account: &'a AccountView,
    token_program: &AccountView,
-) -> Result<Ref<'a, TokenAccount>, Error> {
-   if unlikely(!account.owned_by(token_program.address())) {
+) -> Result<Ref<'a, SplTokenAccountState>, Error> {
+   if unlikely(!address_eq(account.owner(), token_program.address())) {
       log!("token account: owner program mismatch");
       return Err(Error::InvalidAta);
    }
    let data = account.try_borrow().map_err(|_| Error::InvalidAta)?;
-   if data.len() < TokenAccount::LEN {
+   if data.len() < SplTokenAccountState::LEN {
       log!("token account: data too short");
       return Err(Error::InvalidAta);
    }
    Ok(Ref::map(data, |d| unsafe {
-      TokenAccount::from_bytes_unchecked(&d[..TokenAccount::LEN])
+      SplTokenAccountState::from_bytes_unchecked(&d[..SplTokenAccountState::LEN])
    }))
 }
 
 #[inline]
 pub fn assert_system_program(program: &AccountView) -> Result<(), Error> {
-   if unlikely(!SYSTEM_PROGRAM_CHECK_ID(program.address())) {
+   if unlikely(!address_eq(program.address(), &SYSTEM_PROGRAM_ID)) {
       log!("invalid system program");
       return Err(Error::InvalidSystemProgram);
    }
@@ -93,7 +110,7 @@ pub fn assert_system_program(program: &AccountView) -> Result<(), Error> {
 
 #[inline]
 pub fn assert_associated_token_program(program: &AccountView) -> Result<(), Error> {
-   if unlikely(!ASSOCIATED_TOKEN_PROGRAM_CHECK_ID(program.address())) {
+   if unlikely(!address_eq(program.address(), &ASSOCIATED_TOKEN_PROGRAM_ID)) {
       log!("invalid associated token program");
       return Err(Error::InvalidAssociatedTokenProgram);
    }
@@ -109,11 +126,11 @@ pub fn verify_token_account(
    expected_mint: &Address,
 ) -> Result<u64, Error> {
    let token_account = borrow_token_account(account, token_program)?;
-   if unlikely(token_account.mint() != expected_mint) {
+   if unlikely(!address_eq(token_account.mint(), expected_mint)) {
       log!("token account mint mismatch");
       return Err(Error::MintMismatch);
    }
-   if unlikely(token_account.owner() != expected_owner) {
+   if unlikely(!address_eq(token_account.owner(), expected_owner)) {
       log!("token account owner mismatch");
       return Err(Error::InvalidAta);
    }
@@ -131,25 +148,25 @@ pub fn vault_ata_exists(
    wallet: &Address,
    mint: &Address,
 ) -> Result<bool, Error> {
-   if !account.owned_by(token_program.address()) {
+   if !address_eq(account.owner(), token_program.address()) {
       return Ok(false);
    }
    let data = match account.try_borrow() {
       Ok(d) => d,
       Err(_) => return Ok(false),
    };
-   if unlikely(data.len() < TokenAccount::LEN) {
+   if unlikely(data.len() < SplTokenAccountState::LEN) {
       return Ok(false);
    }
-   let token_account = unsafe { TokenAccount::from_bytes_unchecked(&data[..TokenAccount::LEN]) };
+   let token_account = unsafe { SplTokenAccountState::from_bytes_unchecked(&data[..SplTokenAccountState::LEN]) };
    if !token_account.is_initialized() {
       return Ok(false);
    }
-   if unlikely(token_account.mint() != mint) {
+   if unlikely(!address_eq(token_account.mint(), mint)) {
       log!("vault ata: mint mismatch on existing account");
       return Err(Error::MintMismatch);
    }
-   if unlikely(token_account.owner() != wallet) {
+   if unlikely(!address_eq(token_account.owner(), wallet)) {
       log!("vault ata: owner mismatch on existing account");
       return Err(Error::InvalidAta);
    }
@@ -163,7 +180,7 @@ pub fn verify_token_account_mint(
    expected_mint: &Address,
 ) -> Result<(), Error> {
    let token_account = borrow_token_account(account, token_program)?;
-   if unlikely(token_account.mint() != expected_mint) {
+   if unlikely(!address_eq(token_account.mint(), expected_mint)) {
       log!("token account mint mismatch");
       return Err(Error::MintMismatch);
    }
@@ -177,16 +194,18 @@ pub fn verify_token_account_mint(
 /// Mint account owned by `token_program` (classic or Token-2022); supports extension mints (base layout only).
 /// Returns base-layout `decimals` for use with `TransferChecked` without re-reading the mint.
 pub fn verify_mint_account(mint: &AccountView, token_program: &AccountView) -> Result<u8, Error> {
-   if unlikely(!mint.owned_by(token_program.address())) {
+   if unlikely(!address_eq(mint.owner(), token_program.address())) {
       log!("mint: owner program mismatch");
       return Err(Error::InvalidAta);
    }
-   let data = mint.try_borrow().map_err(|_| Error::InvalidAta)?;
-   if unlikely(data.len() < Mint::LEN) {
+   let len = mint.data_len();
+   if unlikely(len < Mint::LEN) {
       log!("mint: data too short");
       return Err(Error::InvalidAta);
    }
-   let m = unsafe { Mint::from_bytes_unchecked(&data[..Mint::LEN]) };
+   let ptr = mint.data_ptr();
+   let bytes = unsafe { core::slice::from_raw_parts(ptr, Mint::LEN) };
+   let m = unsafe { Mint::from_bytes_unchecked(bytes) };
    if unlikely(!m.is_initialized()) {
       log!("mint: not initialized");
       return Err(Error::InvalidAta);
@@ -194,23 +213,7 @@ pub fn verify_mint_account(mint: &AccountView, token_program: &AccountView) -> R
    Ok(m.decimals())
 }
 
-/// SPL `TransferChecked` (discriminator 12) via classic Token or Token-2022.
-pub fn invoke_token_transfer_checked(
-   token_program: &AccountView,
-   mint: &AccountView,
-   from: &AccountView,
-   to: &AccountView,
-   authority: &AccountView,
-   amount: u64,
-   signers: &[Signer],
-) -> ProgramResult {
-   let decimals = verify_mint_account(mint, token_program).map_err(ProgramError::from)?;
-   invoke_token_transfer_checked_with_decimals(
-      token_program, mint, from, to, authority, amount, signers, decimals,
-   )
-}
-
-/// Like [`invoke_token_transfer_checked`], but uses known `decimals` (e.g. after [`verify_mint_account`]) to avoid a second mint read.
+/// SPL `TransferChecked` via classic Token or Token-2022, with caller-supplied `decimals`.
 pub fn invoke_token_transfer_checked_with_decimals(
    token_program: &AccountView,
    mint: &AccountView,
@@ -234,9 +237,10 @@ pub fn invoke_token_transfer_checked_with_decimals(
    .invoke_signed(signers)
 }
 
+#[inline]
 pub fn transfer_lamports_from_user_vault_pda(
-   source: &AccountView,
-   destination: &AccountView,
+   source: &mut AccountView,
+   destination: &mut AccountView,
    lamports: u64,
 ) -> ProgramResult {
    // Caller must have loaded `source` as the program-owned vault PDA; no ownership check here.
@@ -282,57 +286,52 @@ pub fn derive_user_vault_pda(owner: &Address, app_address: &Address, program_id:
    Address::find_program_address(&[USER_VAULT_SEED, owner.as_ref(), app_address.as_ref()], program_id)
 }
 
-/// Load program-owned user vault account; verifies PDA address against `owner` + bump.
-pub fn load_user_vault(
-   program_id: &Address,
-   user_vault_pda: &AccountView,
-   expected_owner: &Address,
-   expected_app_address: &Address,
-) -> Result<UserVaultAccount, ProgramError> {
-   if unlikely(!user_vault_pda.owned_by(&ID)) {
+#[inline(always)]
+pub fn assert_user_vault_is_owned_by_program_and_correct_length(user_vault_pda: &AccountView) -> Result<(), Error> {
+   if unlikely(!address_eq(user_vault_pda.owner(), &ID)) {
       log!("user vault: not found");
       return Err(Error::UserVaultNotFound.into());
    }
-   let vault = {
-      let data = user_vault_pda.try_borrow().map_err(|_| Error::UserVaultNotFound)?;
-      if unlikely(data.len() != UserVaultAccount::LEN) {
-         log!("user vault: bad account data length");
-         return Err(Error::UserVaultNotFound.into());
-      }
-      UserVaultAccount::unpack(&data).map_err(|e| {
-         log!("user vault: unpack failed");
-         e
-      })?
-   };
-   if unlikely(vault.owner.as_ref() != expected_owner.as_ref()) {
-      log!("user vault: owner mismatch");
+   if unlikely(user_vault_pda.data_len() != UserVaultAccount::LEN) {
+      log!("user vault: bad account data length");
+      return Err(Error::InvalidUserVaultAccountLength.into());
+   }
+   Ok(())
+}
+
+#[inline(always)]
+pub fn verify_vault_owner_and_app_address(user_vault_pda: &AccountView, owner: &Address, app_address: &Address) -> Result<(), Error> {
+   let vault_owner = Address::new_from_array(unsafe {
+      read(user_vault_pda.data_ptr().add(8) as *const [u8; 32])
+   });
+   if unlikely(!address_eq(owner, &vault_owner)) {
+      log!("user vault: owner does not match");
       return Err(Error::UserVaultOwnerMismatch.into());
    }
-   if unlikely(vault.app_address.as_ref() != expected_app_address.as_ref()) {
-      log!("user vault: app address mismatch");
+   let vault_app_address = Address::new_from_array(unsafe {
+      read(user_vault_pda.data_ptr().add(40) as *const [u8; 32])
+   });
+   if unlikely(!address_eq(app_address, &vault_app_address)) {
+      log!("user vault: app address does not match");
       return Err(Error::UserVaultAppAddressMismatch.into());
    }
-   let bump_seed = [vault.bump];
-   let expected_addr = Address::create_program_address(
-      &[
-         USER_VAULT_SEED,
-         expected_owner.as_ref(),
-         expected_app_address.as_ref(),
-         &bump_seed[..],
-      ],
-      program_id,
-   )
-   .map_err(|_| ProgramError::InvalidSeeds)?;
+   Ok(())
+}
 
-   if unlikely(user_vault_pda.address() != &expected_addr) {
-      log!("user vault: pda address mismatch");
-      return Err(Error::UserVaultPdaMismatch.into());
+/// SPL mint base layout: `decimals` byte at offset 44 (after mint_authority + supply).
+#[inline]
+pub fn mint_base_decimals(mint: &AccountView) -> Result<u8, ProgramError> {
+   if unlikely(mint.data_len() < 45) {
+      return Err(ProgramError::InvalidAccountData);
    }
-   Ok(vault)
+   Ok(unsafe { *mint.data_ptr().add(44) })
 }
 
 /// Drain `account_to_close` lamports to `recipient` and close (program-owned PDA rent reclaim).
-pub fn close_program_account_lamports_to(account_to_close: &AccountView, recipient: &AccountView) -> ProgramResult {
+pub fn close_program_account_lamports_to(
+   account_to_close: &mut AccountView,
+   recipient: &mut AccountView,
+) -> ProgramResult {
    let rent_lamports = account_to_close.lamports();
    let new_dest = recipient
       .lamports()
@@ -350,8 +349,9 @@ pub fn close_program_account_lamports_to(account_to_close: &AccountView, recipie
 }
 
 /// Empty system-owned account suitable for `CreateAccount` (PDA pre-image).
+#[inline]
 pub fn assert_pda_uninitialized(account: &AccountView, system_id: &Address) -> Result<(), Error> {
-   if unlikely(!account.owned_by(system_id)) {
+   if unlikely(!address_eq(account.owner(), system_id)) {
       log!("pda already exists or wrong owner");
       return Err(Error::UserVaultAlreadyExists);
    }
@@ -362,28 +362,63 @@ pub fn assert_pda_uninitialized(account: &AccountView, system_id: &Address) -> R
    Ok(())
 }
 
+
+
 #[inline]
-pub(crate) fn parse_u64_instruction_data(data: &[u8]) -> Result<u64, ProgramError> {
+pub fn parse_u64_instruction_data(data: &[u8]) -> Result<u64, ProgramError> {
    if unlikely(data.len() != 8) {
       return Err(ProgramError::InvalidInstructionData);
    }
-   Ok(u64::from_le_bytes(data.try_into().unwrap()))
+   Ok(unsafe { read(data.as_ptr() as *const u64) })
 }
 
 #[inline]
-pub(crate) fn parse_two_u64_instruction_data(data: &[u8]) -> Result<(u64, u64), ProgramError> {
+pub fn parse_two_u64_instruction_data(data: &[u8]) -> Result<(u64, u64), ProgramError> {
    if unlikely(data.len() != 16) {
       return Err(ProgramError::InvalidInstructionData);
    }
-   Ok((u64::from_le_bytes(data[0..8].try_into().unwrap()), u64::from_le_bytes(data[8..16].try_into().unwrap())))
+   let p = data.as_ptr();
+   Ok(unsafe {
+      (
+         read(p as *const u64),
+         read(p.add(8) as *const u64),
+      )
+   })
 }
 
 #[inline]
-pub(crate) fn parse_u32_instruction_data(data: &[u8]) -> Result<u32, ProgramError> {
+pub fn parse_u32_instruction_data(data: &[u8]) -> Result<u32, ProgramError> {
    if unlikely(data.len() != 4) {
       return Err(ProgramError::InvalidInstructionData);
    }
-   Ok(u32::from_le_bytes(data.try_into().unwrap()))
+   Ok(unsafe { read(data.as_ptr() as *const u32) })
+}
+
+#[inline(always)]
+pub fn get_vault_bump(user_vault_pda: &AccountView) -> u8 {
+   unsafe { *user_vault_pda.data_ptr().add(1) as u8 }
+}
+
+#[inline(always)]
+pub fn get_vault_ata_count(user_vault_pda: &AccountView) -> u16 {
+   unsafe { *(user_vault_pda.data_ptr().add(2) as *const u16) }
+}
+
+#[inline(always)]
+pub fn get_vault_delegate_expires(user_vault_pda: &AccountView) -> u32 {
+   unsafe { *(user_vault_pda.data_ptr().add(4) as *const u32) }
+}
+
+#[inline(always)]
+pub fn verify_vault_delegate(user_vault_pda: &AccountView, delegate: &Address) -> Result<(), Error> {
+   let vault_delegate = Address::new_from_array(unsafe {
+      read(user_vault_pda.data_ptr().add(72) as *const [u8; 32])
+   });
+   if unlikely(!address_eq(delegate, &vault_delegate)) {
+      log!("user vault: delegate does not match");
+      return Err(Error::InvalidUserVaultDelegate);
+   }
+   Ok(())
 }
 
 #[inline]
@@ -397,21 +432,41 @@ pub fn unix_timestamp_to_u32(ts: i64) -> Result<u32, Error> {
    Ok(ts as u32)
 }
 
-#[inline(never)]
-pub fn get_time() -> Result<u32, Error> {
-   let ts = Clock::get()
-      .map_err(|_| Error::InvalidUnixTimestamp)?
-      .unix_timestamp;
-   unix_timestamp_to_u32(ts)
-}
-
-/// `Clock::unix_timestamp` (as `u32`) must be `<= delegate_expires`. Use `u32::MAX` when the delegate should not expire within the `u32` timestamp range.
 #[inline]
-pub fn require_delegate_not_expired(delegate_expires: u32) -> Result<(), Error> {
-   let now = get_time()?;
-   if unlikely(now > delegate_expires) {
+pub fn require_delegate_not_expired(delegate_expires: u32, clock_sysvar: &AccountView) -> Result<(), Error> {
+   verify_clock_account(clock_sysvar)?;
+   let now_i64 = unsafe { *(clock_sysvar.data_ptr().add(32) as *const i64) };
+   if unlikely(unix_timestamp_to_u32(now_i64)? > delegate_expires) {
       log!("delegate authorization expired");
       return Err(Error::ExpiredDelegate);
    }
    Ok(())
+}
+
+#[inline]
+pub fn verify_clock_account(clock_account: &AccountView) -> Result<(), Error> {
+   if unlikely(!address_eq(clock_account.address(), &CLOCK_ID)) {
+      log!("clock account: not found");
+      return Err(Error::InvalidClockAccount);
+   }
+   Ok(())
+
+}
+
+#[inline]
+pub fn verify_rent_account(rent_account: &AccountView) -> Result<(), Error> {
+   if unlikely(!address_eq(rent_account.address(), &RENT_ID)) {
+      log!("rent account: not found");
+      return Err(Error::InvalidRentAccount);
+   }
+   Ok(())
+}
+
+/// Rent-exempt minimum lamports from the serialized Rent sysvar (`lamports_per_byte` at LE offset 0).
+#[inline]
+pub fn rent_minimum_balance_from_sysvar(rent_sysvar: &AccountView, data_len: usize) -> Result<u64, ProgramError> {
+   verify_rent_account(rent_sysvar)?;
+   let rent = unsafe { *(rent_sysvar.data_ptr() as *const u64) };
+
+   Ok(rent * (data_len as u64 + 128))
 }

@@ -1,8 +1,10 @@
 use crate::common::{
-   associated_token_address, custom_vault_err, derive_user_vault, fresh_mollusk, ix_app_ix, ix_create, ix_deposit,
-   log_cu, merge_accounts, mint_account, signer_account, system_program_meta, test_program_id, token_account,
-   token_program_id, treasury_pda, vault_program_id, with_loader_accounts,
+   associated_token_address, clock_sysvar_pk, custom_vault_err, derive_user_vault, fresh_mollusk, ix_app_ix, ix_create,
+   ix_deposit, log_cu_bench, log_cu_bench_app_ix_split, log_cu_setup, merge_accounts, mint_account, rent_sysvar_account,
+   rent_sysvar_pk, signer_account, system_program_meta, test_program_id, token_account, token_program_id, treasury_pda,
+   vault_program_id, with_clock_and_loaders,
 };
+use test_program::TestProgramInstruction;
 use mollusk_svm::result::Check;
 use mollusk_svm_programs_token::{associated_token, token};
 use solana_account::Account;
@@ -34,6 +36,7 @@ fn app_ix_success_deposit_from_user() {
    let (treasury_pda, _) = treasury_pda();
    let treasury_ata = associated_token_address(&treasury_pda, &mint_pk);
    let (sys_pk, sys_acct) = system_program_meta();
+   let (rent_pk, rent_acct) = rent_sysvar_account(&mollusk);
    let tok = token_program_id();
    let ata = associated_token::ID;
 
@@ -42,6 +45,7 @@ fn app_ix_success_deposit_from_user() {
       (pda, Account::default()),
       (app, Account::default()),
       (delegate, Account::default()),
+      (rent_pk, rent_acct),
       (sys_pk, sys_acct.clone()),
    ];
    let create_ix = Instruction::new_with_bytes(
@@ -52,11 +56,12 @@ fn app_ix_success_deposit_from_user() {
          AccountMeta::new(pda, false),
          AccountMeta::new_readonly(app, false),
          AccountMeta::new_readonly(delegate, false),
+         AccountMeta::new_readonly(rent_sysvar_pk(), false),
          AccountMeta::new_readonly(sys_pk, false),
       ],
    );
    let r0 = mollusk.process_and_validate_instruction(&create_ix, &create_accounts, &[Check::success()]);
-   log_cu("app_ix::app_ix_success_deposit_from_user:create", &r0);
+   log_cu_setup("app_ix::app_ix_success_deposit_from_user:create", &r0);
 
    let deposit_accounts = vec![
       (owner, signer_account(2_000_000_000)),
@@ -86,10 +91,10 @@ fn app_ix_success_deposit_from_user() {
       ],
    );
    let r1 = mollusk.process_and_validate_instruction(&dep_ix, &merged_d, &[Check::success()]);
-   log_cu("app_ix::app_ix_success_deposit_from_user:deposit", &r1);
+   log_cu_setup("app_ix::app_ix_success_deposit_from_user:deposit", &r1);
 
    let app_ix_data = ix_app_ix(&inner_deposit_from_user(50_000));
-   // `app_ix`: 4 fixed + inner `deposit_from_user` (9): signer, authority, source_ata, treasury_pda, treasury_ata, mint, system, token, ata.
+   // `app_ix`: 5 fixed + inner `deposit_from_user` (9): signer, authority, source_ata, treasury_pda, treasury_ata, mint, system, token, ata.
    let vault_ix = Instruction::new_with_bytes(
       vault_program_id(),
       &app_ix_data,
@@ -98,6 +103,7 @@ fn app_ix_success_deposit_from_user() {
          AccountMeta::new(owner, true),
          AccountMeta::new_readonly(pda, false),
          AccountMeta::new_readonly(app, false),
+         AccountMeta::new_readonly(clock_sysvar_pk(), false),
          AccountMeta::new(delegate, true),
          AccountMeta::new(owner, true),
          AccountMeta::new(owner_source, false),
@@ -124,10 +130,29 @@ fn app_ix_success_deposit_from_user() {
       (ata, associated_token::keyed_account().1),
    ];
    let merged_app = merge_accounts(&app_accounts, &r1);
-   let for_app = with_loader_accounts(&merged_app);
+   let for_app = with_clock_and_loaders(&mollusk, &merged_app);
 
+   let vault_ix_noop = Instruction::new_with_bytes(
+      vault_program_id(),
+      &ix_app_ix(&[TestProgramInstruction::BenchNoopInner as u8]),
+      vec![
+         AccountMeta::new(delegate, true),
+         AccountMeta::new(owner, true),
+         AccountMeta::new_readonly(pda, false),
+         AccountMeta::new_readonly(app, false),
+         AccountMeta::new_readonly(clock_sysvar_pk(), false),
+      ],
+   );
+   let r_noop = mollusk.process_and_validate_instruction(
+      &vault_ix_noop,
+      &for_app,
+      &[Check::success()],
+   );
+
+   let merged_after_noop = merge_accounts(&app_accounts, &r_noop);
+   let for_app = with_clock_and_loaders(&mollusk, &merged_after_noop);
    let r2 = mollusk.process_and_validate_instruction(&vault_ix, &for_app, &[Check::success()]);
-   log_cu("app_ix::app_ix_success_deposit_from_user:app_ix", &r2);
+   log_cu_bench_app_ix_split("app_ix::app_ix_success_deposit_from_user", &r_noop, &r2);
    let t_after = SplTokenAccount::unpack(&r2.get_account(&treasury_ata).unwrap().data)
       .unwrap()
       .amount;
@@ -142,11 +167,13 @@ fn app_ix_fails_delegate_not_signer() {
    let delegate = Pubkey::new_unique();
    let (pda, _) = derive_user_vault(&owner, &app);
    let (sys_pk, sys_acct) = system_program_meta();
+   let (rent_pk, rent_acct) = rent_sysvar_account(&mollusk);
    let create_accounts = vec![
       (owner, signer_account(2_000_000_000)),
       (pda, Account::default()),
       (app, Account::default()),
       (delegate, Account::default()),
+      (rent_pk, rent_acct),
       (sys_pk, sys_acct.clone()),
    ];
    let create_ix = Instruction::new_with_bytes(
@@ -157,11 +184,12 @@ fn app_ix_fails_delegate_not_signer() {
          AccountMeta::new(pda, false),
          AccountMeta::new_readonly(app, false),
          AccountMeta::new_readonly(delegate, false),
+         AccountMeta::new_readonly(rent_sysvar_pk(), false),
          AccountMeta::new_readonly(sys_pk, false),
       ],
    );
    let r0 = mollusk.process_and_validate_instruction(&create_ix, &create_accounts, &[Check::success()]);
-   log_cu("app_ix::app_ix_fails_delegate_not_signer:create", &r0);
+   log_cu_setup("app_ix::app_ix_fails_delegate_not_signer:create", &r0);
    let mint_pk = Pubkey::new_unique();
    let vault_ata = associated_token_address(&pda, &mint_pk);
    let (treasury_pda, _) = treasury_pda();
@@ -177,6 +205,7 @@ fn app_ix_fails_delegate_not_signer() {
          AccountMeta::new_readonly(owner, false),
          AccountMeta::new_readonly(pda, false),
          AccountMeta::new_readonly(app, false),
+         AccountMeta::new_readonly(clock_sysvar_pk(), false),
          AccountMeta::new(vault_ata, false),
          AccountMeta::new_readonly(treasury_pda, false),
          AccountMeta::new(treasury_ata, false),
@@ -202,10 +231,10 @@ fn app_ix_fails_delegate_not_signer() {
    let merged = merge_accounts(&app_accounts, &r0);
    let r = mollusk.process_and_validate_instruction(
       &ix,
-      &merged,
+      &with_clock_and_loaders(&mollusk, &merged),
       &[Check::err(ProgramError::Custom(Error::NotSigner as u32))],
    );
-   log_cu("app_ix::app_ix_fails_delegate_not_signer:app_ix", &r);
+   log_cu_bench("app_ix::app_ix_fails_delegate_not_signer:app_ix", &r);
 }
 
 #[test]
@@ -217,11 +246,13 @@ fn app_ix_fails_wrong_delegate() {
    let wrong_del = Pubkey::new_unique();
    let (pda, _) = derive_user_vault(&owner, &app);
    let (sys_pk, sys_acct) = system_program_meta();
+   let (rent_pk, rent_acct) = rent_sysvar_account(&mollusk);
    let create_accounts = vec![
       (owner, signer_account(2_000_000_000)),
       (pda, Account::default()),
       (app, Account::default()),
       (delegate, Account::default()),
+      (rent_pk, rent_acct),
       (sys_pk, sys_acct.clone()),
    ];
    let create_ix = Instruction::new_with_bytes(
@@ -232,11 +263,12 @@ fn app_ix_fails_wrong_delegate() {
          AccountMeta::new(pda, false),
          AccountMeta::new_readonly(app, false),
          AccountMeta::new_readonly(delegate, false),
+         AccountMeta::new_readonly(rent_sysvar_pk(), false),
          AccountMeta::new_readonly(sys_pk, false),
       ],
    );
    let r0 = mollusk.process_and_validate_instruction(&create_ix, &create_accounts, &[Check::success()]);
-   log_cu("app_ix::app_ix_fails_wrong_delegate:create", &r0);
+   log_cu_setup("app_ix::app_ix_fails_wrong_delegate:create", &r0);
    let mint_pk = Pubkey::new_unique();
    let vault_ata = associated_token_address(&pda, &mint_pk);
    let (treasury_pda, _) = treasury_pda();
@@ -252,6 +284,7 @@ fn app_ix_fails_wrong_delegate() {
          AccountMeta::new_readonly(owner, false),
          AccountMeta::new_readonly(pda, false),
          AccountMeta::new_readonly(app, false),
+         AccountMeta::new_readonly(clock_sysvar_pk(), false),
          AccountMeta::new(vault_ata, false),
          AccountMeta::new_readonly(treasury_pda, false),
          AccountMeta::new(treasury_ata, false),
@@ -277,8 +310,8 @@ fn app_ix_fails_wrong_delegate() {
    let merged = merge_accounts(&app_accounts, &r0);
    let r = mollusk.process_and_validate_instruction(
       &ix,
-      &with_loader_accounts(&merged),
+      &with_clock_and_loaders(&mollusk, &merged),
       &[Check::err(custom_vault_err(Error::InvalidUserVaultDelegate))],
    );
-   log_cu("app_ix::app_ix_fails_wrong_delegate:app_ix", &r);
+   log_cu_bench("app_ix::app_ix_fails_wrong_delegate:app_ix", &r);
 }

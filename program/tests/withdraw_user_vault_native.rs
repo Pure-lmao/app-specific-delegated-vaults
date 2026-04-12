@@ -1,6 +1,6 @@
 use crate::common::{
-   derive_user_vault, fresh_mollusk, ix_create, ix_withdraw_native, log_cu, merge_accounts, signer_account,
-   system_program_meta, test_program_id, vault_program_id,
+   derive_user_vault, fresh_mollusk, ix_create, ix_withdraw_native, log_cu_bench, merge_accounts, rent_sysvar_account,
+   rent_sysvar_pk, signer_account, system_program_meta, test_program_id, vault_program_id,
 };
 use mollusk_svm::result::Check;
 use solana_account::Account;
@@ -17,7 +17,6 @@ fn create_vault_only() -> (
    Pubkey,
    Pubkey,
    Pubkey,
-   Pubkey,
 ) {
    let mollusk = fresh_mollusk();
    let owner = Pubkey::new_unique();
@@ -25,11 +24,13 @@ fn create_vault_only() -> (
    let delegate = Pubkey::new_unique();
    let (pda, _) = derive_user_vault(&owner, &app);
    let (sys_pk, sys_acct) = system_program_meta();
+   let (rent_pk, rent_acct) = rent_sysvar_account(&mollusk);
    let create_accounts = vec![
       (owner, signer_account(2_000_000_000)),
       (pda, Account::default()),
       (app, Account::default()),
       (delegate, Account::default()),
+      (rent_pk, rent_acct),
       (sys_pk, sys_acct.clone()),
    ];
    let create_ix = Instruction::new_with_bytes(
@@ -40,23 +41,22 @@ fn create_vault_only() -> (
          AccountMeta::new(pda, false),
          AccountMeta::new_readonly(app, false),
          AccountMeta::new_readonly(delegate, false),
+         AccountMeta::new_readonly(rent_sysvar_pk(), false),
          AccountMeta::new_readonly(sys_pk, false),
       ],
    );
-   let r0 = mollusk.process_and_validate_instruction(&create_ix, &create_accounts, &[Check::success()]);
-   (mollusk, r0, owner, app, delegate, pda, sys_pk)
+   let r0 = mollusk.process_and_validate_instruction(&create_ix, create_accounts.as_slice(), &[Check::success()]);
+   (mollusk, r0, owner, app, delegate, pda)
 }
 
 #[test]
 fn withdraw_native_success() {
-   let (mollusk, r0, owner, app, _delegate, pda, sys_pk) = create_vault_only();
-   let (_sys_id, sys_acct) = system_program_meta();
+   let (mollusk, r0, owner, app, _delegate, pda) = create_vault_only();
    let rent = mollusk.sysvars.rent.minimum_balance(UserVaultAccount::LEN);
    let withdraw_pre = vec![
       (owner, signer_account(2_000_000_000)),
       (pda, Account::default()),
       (app, Account::default()),
-      (sys_pk, sys_acct),
    ];
    let mut merged = merge_accounts(&withdraw_pre, &r0);
    for (k, a) in merged.iter_mut() {
@@ -73,11 +73,10 @@ fn withdraw_native_success() {
          AccountMeta::new(owner, true),
          AccountMeta::new(pda, false),
          AccountMeta::new_readonly(app, false),
-         AccountMeta::new_readonly(sys_pk, false),
       ],
    );
    let r2 = mollusk.process_and_validate_instruction(&w_ix, &merged, &[Check::success()]);
-   log_cu("withdraw_user_vault_native::withdraw_native_success", &r2);
+   log_cu_bench("withdraw_user_vault_native::withdraw_native_success", &r2);
    let owner_after = r2.get_account(&owner).unwrap().lamports;
    let pda_after = r2.get_account(&pda).unwrap().lamports;
    assert_eq!(owner_after, owner_lamports_before + 120_000);
@@ -90,7 +89,6 @@ fn withdraw_native_fails_zero_amount() {
    let owner = Pubkey::new_unique();
    let app = test_program_id();
    let (pda, _) = derive_user_vault(&owner, &app);
-   let (sys_pk, sys_acct) = system_program_meta();
    let w_ix = Instruction::new_with_bytes(
       vault_program_id(),
       &ix_withdraw_native(0),
@@ -98,33 +96,29 @@ fn withdraw_native_fails_zero_amount() {
          AccountMeta::new(owner, true),
          AccountMeta::new(pda, false),
          AccountMeta::new_readonly(app, false),
-         AccountMeta::new_readonly(sys_pk, false),
       ],
    );
    let accounts = vec![
       (owner, signer_account(1_000_000_000)),
       (pda, Account::default()),
       (app, Account::default()),
-      (sys_pk, sys_acct),
    ];
    let r = mollusk.process_and_validate_instruction(
       &w_ix,
       &accounts,
       &[Check::err(ProgramError::InvalidInstructionData)],
    );
-   log_cu("withdraw_user_vault_native::withdraw_native_fails_zero_amount", &r);
+   log_cu_bench("withdraw_user_vault_native::withdraw_native_fails_zero_amount", &r);
 }
 
 #[test]
 fn withdraw_native_fails_owner_not_signer() {
-   let (mollusk, r0, owner, app, _delegate, pda, sys_pk) = create_vault_only();
-   let (_sys_id, sys_acct) = system_program_meta();
+   let (mollusk, r0, owner, app, _delegate, pda) = create_vault_only();
    let rent = mollusk.sysvars.rent.minimum_balance(UserVaultAccount::LEN);
    let withdraw_pre = vec![
       (owner, signer_account(2_000_000_000)),
       (pda, Account::default()),
       (app, Account::default()),
-      (sys_pk, sys_acct),
    ];
    let mut merged = merge_accounts(&withdraw_pre, &r0);
    for (k, a) in merged.iter_mut() {
@@ -139,7 +133,6 @@ fn withdraw_native_fails_owner_not_signer() {
          AccountMeta::new(owner, false),
          AccountMeta::new(pda, false),
          AccountMeta::new_readonly(app, false),
-         AccountMeta::new_readonly(sys_pk, false),
       ],
    );
    let r = mollusk.process_and_validate_instruction(
@@ -147,5 +140,5 @@ fn withdraw_native_fails_owner_not_signer() {
       &merged,
       &[Check::err(ProgramError::Custom(Error::NotSigner as u32))],
    );
-   log_cu("withdraw_user_vault_native::withdraw_native_fails_owner_not_signer", &r);
+   log_cu_bench("withdraw_user_vault_native::withdraw_native_fails_owner_not_signer", &r);
 }

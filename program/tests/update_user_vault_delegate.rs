@@ -1,6 +1,7 @@
 use crate::common::{
-   custom_vault_err, decode_user_vault, derive_user_vault, fresh_mollusk, ix_create, ix_update_delegate, log_cu,
-   merge_accounts, signer_account, system_program_meta, test_program_id, vault_program_id,
+   custom_vault_err, decode_user_vault, derive_user_vault, fresh_mollusk, ix_create, ix_update_delegate, log_cu_bench,
+   log_cu_setup, merge_accounts, rent_sysvar_account, rent_sysvar_pk, signer_account, system_program_meta,
+   test_program_id, vault_program_id,
 };
 use mollusk_svm::result::Check;
 use solana_account::Account;
@@ -17,11 +18,13 @@ fn update_delegate_and_expires_success() {
    let delegate_old = Pubkey::new_unique();
    let (pda, _) = derive_user_vault(&owner, &app);
    let (sys_pk, sys_acct) = system_program_meta();
+   let (rent_pk, rent_acct) = rent_sysvar_account(&mollusk);
    let create_accounts = vec![
       (owner, signer_account(2_000_000_000)),
       (pda, Account::default()),
       (app, Account::default()),
       (delegate_old, Account::default()),
+      (rent_pk, rent_acct),
       (sys_pk, sys_acct.clone()),
    ];
    let create_ix = Instruction::new_with_bytes(
@@ -32,11 +35,12 @@ fn update_delegate_and_expires_success() {
          AccountMeta::new(pda, false),
          AccountMeta::new_readonly(app, false),
          AccountMeta::new_readonly(delegate_old, false),
+         AccountMeta::new_readonly(rent_sysvar_pk(), false),
          AccountMeta::new_readonly(sys_pk, false),
       ],
    );
    let r0 = mollusk.process_and_validate_instruction(&create_ix, &create_accounts, &[Check::success()]);
-   log_cu("update_user_vault_delegate::update_delegate_and_expires_success:create", &r0);
+   log_cu_setup("update_user_vault_delegate::update_delegate_and_expires_success:create", &r0);
    let delegate_new = Pubkey::new_unique();
    let new_exp: u32 = 3_333_333;
    let upd_accounts = vec![
@@ -57,7 +61,7 @@ fn update_delegate_and_expires_success() {
       ],
    );
    let r1 = mollusk.process_and_validate_instruction(&upd_ix, &merged, &[Check::success()]);
-   log_cu("update_user_vault_delegate::update_delegate_and_expires_success:update", &r1);
+   log_cu_bench("update_user_vault_delegate::update_delegate_and_expires_success:update", &r1);
    let v = decode_user_vault(&r1.get_account(&pda).unwrap().data).unwrap();
    assert_eq!(v.delegate, delegate_new);
    assert_eq!(v.delegate_expires, new_exp);
@@ -71,11 +75,13 @@ fn update_fails_owner_not_signer() {
    let delegate_old = Pubkey::new_unique();
    let (pda, _) = derive_user_vault(&owner, &app);
    let (sys_pk, sys_acct) = system_program_meta();
+   let (rent_pk, rent_acct) = rent_sysvar_account(&mollusk);
    let create_accounts = vec![
       (owner, signer_account(2_000_000_000)),
       (pda, Account::default()),
       (app, Account::default()),
       (delegate_old, Account::default()),
+      (rent_pk, rent_acct),
       (sys_pk, sys_acct.clone()),
    ];
    let create_ix = Instruction::new_with_bytes(
@@ -86,11 +92,12 @@ fn update_fails_owner_not_signer() {
          AccountMeta::new(pda, false),
          AccountMeta::new_readonly(app, false),
          AccountMeta::new_readonly(delegate_old, false),
+         AccountMeta::new_readonly(rent_sysvar_pk(), false),
          AccountMeta::new_readonly(sys_pk, false),
       ],
    );
    let r0 = mollusk.process_and_validate_instruction(&create_ix, &create_accounts, &[Check::success()]);
-   log_cu("update_user_vault_delegate::update_fails_owner_not_signer:create", &r0);
+   log_cu_setup("update_user_vault_delegate::update_fails_owner_not_signer:create", &r0);
    let merged = merge_accounts(
       &[
          (owner, signer_account(2_000_000_000)),
@@ -115,7 +122,7 @@ fn update_fails_owner_not_signer() {
       &merged,
       &[Check::err(ProgramError::Custom(Error::NotSigner as u32))],
    );
-   log_cu("update_user_vault_delegate::update_fails_owner_not_signer:update", &r);
+   log_cu_bench("update_user_vault_delegate::update_fails_owner_not_signer:update", &r);
 }
 
 #[test]
@@ -127,11 +134,13 @@ fn update_fails_owner_mismatch() {
    let delegate_old = Pubkey::new_unique();
    let (pda, _) = derive_user_vault(&owner, &app);
    let (sys_pk, sys_acct) = system_program_meta();
+   let (rent_pk, rent_acct) = rent_sysvar_account(&mollusk);
    let create_accounts = vec![
       (owner, signer_account(2_000_000_000)),
       (pda, Account::default()),
       (app, Account::default()),
       (delegate_old, Account::default()),
+      (rent_pk, rent_acct),
       (sys_pk, sys_acct.clone()),
    ];
    let create_ix = Instruction::new_with_bytes(
@@ -142,11 +151,12 @@ fn update_fails_owner_mismatch() {
          AccountMeta::new(pda, false),
          AccountMeta::new_readonly(app, false),
          AccountMeta::new_readonly(delegate_old, false),
+         AccountMeta::new_readonly(rent_sysvar_pk(), false),
          AccountMeta::new_readonly(sys_pk, false),
       ],
    );
    let r0 = mollusk.process_and_validate_instruction(&create_ix, &create_accounts, &[Check::success()]);
-   log_cu("update_user_vault_delegate::update_fails_owner_mismatch:create", &r0);
+   log_cu_setup("update_user_vault_delegate::update_fails_owner_mismatch:create", &r0);
    let merged = merge_accounts(
       &[
          (other_owner, signer_account(2_000_000_000)),
@@ -171,5 +181,5 @@ fn update_fails_owner_mismatch() {
       &merged,
       &[Check::err(custom_vault_err(Error::UserVaultOwnerMismatch))],
    );
-   log_cu("update_user_vault_delegate::update_fails_owner_mismatch:update", &r);
+   log_cu_bench("update_user_vault_delegate::update_fails_owner_mismatch:update", &r);
 }

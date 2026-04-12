@@ -13,30 +13,31 @@
 //! 7. `mint` (readonly (can be dummy if amount == 0))
 //! 8. `token_program` (readonly (can be dummy if amount == 0))
 //! 9. `instructions_sysvar` (readonly) — `Sysvar1nstructions1111111111111111111111111`
-//! 10. `system_program` (readonly)
+//! 10. `clock_sysvar` (readonly) — `SysvarC1ock11111111111111111111111111111111`
 //!
 //! Data: `[discriminator (u8), amount_native (u64), amount (u64)]` — either amount may be zero; not both.
 
 use crate::{
    constants::USER_VAULT_SEED,
-   error::Error,
    helpers::{
-      assert_spl_token_program, assert_system_program, invoke_token_transfer_checked, load_user_vault,
+      assert_spl_token_program, assert_user_vault_is_owned_by_program_and_correct_length,
+      get_vault_bump, get_vault_delegate_expires,
+      invoke_token_transfer_checked_with_decimals, mint_base_decimals,
       parse_two_u64_instruction_data, require_delegate_not_expired, require_signer,
-      require_top_level_instruction_is_app, transfer_lamports_from_user_vault_pda, verify_token_account,
-      verify_token_account_mint,
+      require_top_level_instruction_is_app, transfer_lamports_from_user_vault_pda,
+      verify_vault_delegate, verify_vault_owner_and_app_address,
    },
 };
 use pinocchio::{
    cpi::{Seed, Signer},
    error::ProgramError,
-   AccountView, Address, ProgramResult,
+   AccountView, ProgramResult,
    hint::unlikely,
 };
 use pinocchio_log::log;
 
 #[inline(never)]
-pub fn process(program_id: &Address, accounts: &[AccountView], data: &[u8]) -> ProgramResult {
+pub fn process(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
    let (amount_native, amount) = parse_two_u64_instruction_data(data).map_err(|e| {
       log!("cpi_entry: invalid instruction data");
       e
@@ -58,27 +59,24 @@ pub fn process(program_id: &Address, accounts: &[AccountView], data: &[u8]) -> P
       mint,
       token_program,
       instructions_sysvar,
-      system_program,
+      clock_sysvar,
    ] = accounts else {
       log!("cpi_entry: not enough account keys");
       return Err(ProgramError::NotEnoughAccountKeys);
    };
 
    require_top_level_instruction_is_app(instructions_sysvar, app_address)?;
-
    require_signer(delegate)?;
 
-   let vault_state = load_user_vault(program_id, user_vault_pda, owner.address(), app_address.address())?;
-
-   if unlikely(delegate.address().as_ref() != vault_state.delegate.as_ref()) {
-      log!("cpi_entry: delegate does not match vault state");
-      return Err(Error::InvalidUserVaultDelegate.into());
-   }
-
-   require_delegate_not_expired(vault_state.delegate_expires)?;
+   assert_user_vault_is_owned_by_program_and_correct_length(user_vault_pda)?;
+   verify_vault_owner_and_app_address(user_vault_pda, owner.address(), app_address.address())?;
+   verify_vault_delegate(user_vault_pda, delegate.address())?;
+   require_delegate_not_expired(
+      get_vault_delegate_expires(user_vault_pda),
+      clock_sysvar
+   )?;
 
    if amount_native > 0 {
-      assert_system_program(system_program)?;
       transfer_lamports_from_user_vault_pda(user_vault_pda, lamports_dest, amount_native).map_err(|e| {
          log!("cpi_entry: native lamport transfer failed");
          e
@@ -87,10 +85,12 @@ pub fn process(program_id: &Address, accounts: &[AccountView], data: &[u8]) -> P
 
    if amount > 0 {
       assert_spl_token_program(token_program)?;
-      verify_token_account(user_vault_ata, token_program, user_vault_pda.address(), mint.address())?;
-      verify_token_account_mint(dest_ata, token_program, mint.address())?;
-  
-      let bump_seed = [vault_state.bump];
+      let decimals = mint_base_decimals(mint).map_err(|e| {
+         log!("cpi_entry: mint decimals read failed");
+         e
+      })?;
+
+      let bump_seed = [get_vault_bump(user_vault_pda)];
       let signer_seeds = [
          Seed::from(USER_VAULT_SEED),
          Seed::from(owner.address().as_ref()),
@@ -99,15 +99,17 @@ pub fn process(program_id: &Address, accounts: &[AccountView], data: &[u8]) -> P
       ];
       let signers = [Signer::from(&signer_seeds[..])];
 
-      invoke_token_transfer_checked(
-         token_program, 
-         mint, 
-         user_vault_ata, 
-         dest_ata, 
-         user_vault_pda, 
-         amount, 
-         &signers
-      ).map_err(|e| {
+      invoke_token_transfer_checked_with_decimals(
+         token_program,
+         mint,
+         user_vault_ata,
+         dest_ata,
+         user_vault_pda,
+         amount,
+         &signers,
+         decimals,
+      )
+      .map_err(|e| {
          log!("cpi_entry: transfer cpi failed");
          e
       })?;

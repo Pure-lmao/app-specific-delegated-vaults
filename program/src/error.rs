@@ -24,9 +24,13 @@ pub enum Error {
    UserVaultHasOpenAtas = 17,
    InvalidUnixTimestamp = 18,
    ExpiredDelegate = 19,
+   InvalidClockAccount = 20,
+   InvalidRentAccount = 21,
+   InvalidUserVaultAccountLength = 22,
 }
 
 impl From<Error> for ProgramError {
+   #[inline]
    fn from(e: Error) -> Self {
       ProgramError::Custom(e as u32)
    }

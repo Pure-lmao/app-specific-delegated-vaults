@@ -34,19 +34,21 @@ pub enum Instruction {
 }
 
 #[inline(never)]
-pub fn dispatch(program_id: &Address, d: u8, data: &[u8], accounts: &[AccountView]) -> ProgramResult {
-   if d == Instruction::CreateUserVault as u8 {create_user_vault::process(program_id, accounts, data)}
-   else if d == Instruction::UpdateUserVaultDelegate as u8 {update_user_vault_delegate::process(program_id, accounts, data)}
-   else if d == Instruction::DepositUserVault as u8 {deposit_user_vault::process(program_id, accounts, data)}
-   else if d == Instruction::WithdrawUserVault as u8 {withdraw_user_vault::process(program_id, accounts, data)}
-   else if d == Instruction::WithdrawUserVaultNative as u8 {withdraw_user_vault_native::process(program_id, accounts, data)}
-   else if d == Instruction::AppIx as u8 {app_ix::process(program_id, accounts, data)}
-   else if d == Instruction::CpiEntry as u8 {cpi_entry::process(program_id, accounts, data)}
-   else if d == Instruction::CpiEntryNative as u8 {cpi_entry_native::process(program_id, accounts, data)}
-   else if d == Instruction::CloseVaultAta as u8 {close_vault_ata::process(program_id, accounts)}
-   else if d == Instruction::CloseUserVault as u8 {close_user_vault::process(program_id, accounts)}
-   else {
-      log!("unknown instruction discriminator");
-      Err(ProgramError::InvalidInstructionData)
+pub fn dispatch(program_id: &Address, d: u8, data: &[u8], accounts: &mut [AccountView]) -> ProgramResult {
+   match d {
+      0 => create_user_vault::process(program_id, accounts, data),
+      1 => deposit_user_vault::process(accounts, data),
+      2 => update_user_vault_delegate::process(accounts, data),
+      3 => withdraw_user_vault::process(accounts, data),
+      4 => withdraw_user_vault_native::process(accounts, data),
+      5 => app_ix::process(accounts, data),
+      6 => cpi_entry::process(accounts, data),
+      7 => cpi_entry_native::process(accounts, data),
+      8 => close_vault_ata::process(accounts),
+      9 => close_user_vault::process(accounts),
+      _ => {
+         log!("unknown instruction discriminator");
+         Err(ProgramError::InvalidInstructionData)
+      }
    }
 }

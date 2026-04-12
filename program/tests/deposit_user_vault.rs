@@ -1,7 +1,7 @@
 use crate::common::{
-   associated_token_address, decode_user_vault, derive_user_vault, fresh_mollusk, ix_create, ix_deposit, log_cu,
-   merge_accounts, mint_account, signer_account, system_program_meta, test_program_id, token_account,
-   token_program_id, vault_program_id,
+   associated_token_address, decode_user_vault, derive_user_vault, fresh_mollusk, ix_create, ix_deposit, log_cu_bench,
+   log_cu_setup, merge_accounts, mint_account, rent_sysvar_account, rent_sysvar_pk, signer_account,
+   system_program_meta, test_program_id, token_account, token_program_id, vault_program_id,
 };
 use mollusk_svm::result::Check;
 use mollusk_svm_programs_token::{associated_token, token};
@@ -30,11 +30,13 @@ fn deposit_success_first_creates_ata() {
    let tok_acct = token::keyed_account().1;
    let ata_acct = associated_token::keyed_account().1;
 
+   let (rent_pk, rent_acct) = rent_sysvar_account(&mollusk);
    let create_accounts = vec![
       (owner, signer_account(2_000_000_000)),
       (pda, Account::default()),
       (app, Account::default()),
       (delegate, Account::default()),
+      (rent_pk, rent_acct),
       (sys_pk, sys_acct.clone()),
    ];
    let create_ix = Instruction::new_with_bytes(
@@ -45,11 +47,12 @@ fn deposit_success_first_creates_ata() {
          AccountMeta::new(pda, false),
          AccountMeta::new_readonly(app, false),
          AccountMeta::new_readonly(delegate, false),
+         AccountMeta::new_readonly(rent_sysvar_pk(), false),
          AccountMeta::new_readonly(sys_pk, false),
       ],
    );
    let r0 = mollusk.process_and_validate_instruction(&create_ix, &create_accounts, &[Check::success()]);
-   log_cu("deposit_user_vault::deposit_success_first_creates_ata:create", &r0);
+   log_cu_setup("deposit_user_vault::deposit_success_first_creates_ata:create", &r0);
 
    let deposit_accounts = vec![
       (owner, signer_account(2_000_000_000)),
@@ -80,7 +83,7 @@ fn deposit_success_first_creates_ata() {
       ],
    );
    let r = mollusk.process_and_validate_instruction(&dep_ix, &merged, &[Check::success()]);
-   log_cu("deposit_user_vault::deposit_success_first_creates_ata:deposit", &r);
+   log_cu_bench("deposit_user_vault::deposit_success_first_creates_ata:deposit", &r);
    let vault_data = r.get_account(&pda).expect("pda").data.clone();
    let v = decode_user_vault(&vault_data).expect("decode");
    assert_eq!(v.ata_count, 1);
@@ -105,11 +108,13 @@ fn deposit_success_second() {
    let tok = token_program_id();
    let ata = associated_token::ID;
 
+   let (rent_pk, rent_acct) = rent_sysvar_account(&mollusk);
    let create_accounts = vec![
       (owner, signer_account(2_000_000_000)),
       (pda, Account::default()),
       (app, Account::default()),
       (delegate, Account::default()),
+      (rent_pk, rent_acct),
       (sys_pk, sys_acct.clone()),
    ];
    let create_ix = Instruction::new_with_bytes(
@@ -120,11 +125,12 @@ fn deposit_success_second() {
          AccountMeta::new(pda, false),
          AccountMeta::new_readonly(app, false),
          AccountMeta::new_readonly(delegate, false),
+         AccountMeta::new_readonly(rent_sysvar_pk(), false),
          AccountMeta::new_readonly(sys_pk, false),
       ],
    );
    let r0 = mollusk.process_and_validate_instruction(&create_ix, &create_accounts, &[Check::success()]);
-   log_cu("deposit_user_vault::deposit_success_second:create", &r0);
+   log_cu_setup("deposit_user_vault::deposit_success_second:create", &r0);
 
    let deposit_accounts = vec![
       (owner, signer_account(2_000_000_000)),
@@ -158,13 +164,13 @@ fn deposit_success_second() {
    };
 
    let r1 = mollusk.process_and_validate_instruction(&dep_ix(50_000), &merged0, &[Check::success()]);
-   log_cu("deposit_user_vault::deposit_success_second:deposit_first", &r1);
+   log_cu_setup("deposit_user_vault::deposit_success_second:deposit_first", &r1);
    let ata_count_1 = decode_user_vault(&r1.get_account(&pda).unwrap().data)
       .unwrap()
       .ata_count;
    let merged1 = merge_accounts(&merged0, &r1);
    let r2 = mollusk.process_and_validate_instruction(&dep_ix(10_000), &merged1, &[Check::success()]);
-   log_cu("deposit_user_vault::deposit_success_second:deposit_second", &r2);
+   log_cu_bench("deposit_user_vault::deposit_success_second:deposit_second", &r2);
    let ata_count_2 = decode_user_vault(&r2.get_account(&pda).unwrap().data)
       .unwrap()
       .ata_count;
@@ -183,11 +189,13 @@ fn deposit_fails_zero_amount() {
    let (sys_pk, sys_acct) = system_program_meta();
    let tok = token_program_id();
    let ata = associated_token::ID;
+   let (rent_pk, rent_acct) = rent_sysvar_account(&mollusk);
    let create_accounts = vec![
       (owner, signer_account(2_000_000_000)),
       (pda, Account::default()),
       (app, Account::default()),
       (delegate, Account::default()),
+      (rent_pk, rent_acct),
       (sys_pk, sys_acct.clone()),
    ];
    let create_ix = Instruction::new_with_bytes(
@@ -198,11 +206,12 @@ fn deposit_fails_zero_amount() {
          AccountMeta::new(pda, false),
          AccountMeta::new_readonly(app, false),
          AccountMeta::new_readonly(delegate, false),
+         AccountMeta::new_readonly(rent_sysvar_pk(), false),
          AccountMeta::new_readonly(sys_pk, false),
       ],
    );
    let r0 = mollusk.process_and_validate_instruction(&create_ix, &create_accounts, &[Check::success()]);
-   log_cu("deposit_user_vault::deposit_fails_zero_amount:create", &r0);
+   log_cu_setup("deposit_user_vault::deposit_fails_zero_amount:create", &r0);
    let vault_ata = associated_token_address(&pda, &mint_pk);
    let source = associated_token_address(&owner, &mint_pk);
    let deposit_accounts = vec![
@@ -237,7 +246,7 @@ fn deposit_fails_zero_amount() {
       &merged,
       &[Check::err(ProgramError::InvalidInstructionData)],
    );
-   log_cu("deposit_user_vault::deposit_fails_zero_amount:deposit", &r);
+   log_cu_bench("deposit_user_vault::deposit_fails_zero_amount:deposit", &r);
 }
 
 #[test]
@@ -251,11 +260,13 @@ fn deposit_fails_owner_not_signer() {
    let (sys_pk, sys_acct) = system_program_meta();
    let tok = token_program_id();
    let ata = associated_token::ID;
+   let (rent_pk, rent_acct) = rent_sysvar_account(&mollusk);
    let create_accounts = vec![
       (owner, signer_account(2_000_000_000)),
       (pda, Account::default()),
       (app, Account::default()),
       (delegate, Account::default()),
+      (rent_pk, rent_acct),
       (sys_pk, sys_acct.clone()),
    ];
    let create_ix = Instruction::new_with_bytes(
@@ -266,11 +277,12 @@ fn deposit_fails_owner_not_signer() {
          AccountMeta::new(pda, false),
          AccountMeta::new_readonly(app, false),
          AccountMeta::new_readonly(delegate, false),
+         AccountMeta::new_readonly(rent_sysvar_pk(), false),
          AccountMeta::new_readonly(sys_pk, false),
       ],
    );
    let r0 = mollusk.process_and_validate_instruction(&create_ix, &create_accounts, &[Check::success()]);
-   log_cu("deposit_user_vault::deposit_fails_owner_not_signer:create", &r0);
+   log_cu_setup("deposit_user_vault::deposit_fails_owner_not_signer:create", &r0);
    let vault_ata = associated_token_address(&pda, &mint_pk);
    let source = associated_token_address(&owner, &mint_pk);
    let deposit_accounts = vec![
@@ -305,7 +317,7 @@ fn deposit_fails_owner_not_signer() {
       &merged,
       &[Check::err(ProgramError::Custom(Error::NotSigner as u32))],
    );
-   log_cu("deposit_user_vault::deposit_fails_owner_not_signer:deposit", &r);
+   log_cu_bench("deposit_user_vault::deposit_fails_owner_not_signer:deposit", &r);
 }
 
 #[test]
@@ -351,5 +363,5 @@ fn deposit_fails_vault_not_found() {
       &accounts,
       &[Check::err(ProgramError::Custom(Error::UserVaultNotFound as u32))],
    );
-   log_cu("deposit_user_vault::deposit_fails_vault_not_found", &r);
+   log_cu_bench("deposit_user_vault::deposit_fails_vault_not_found", &r);
 }

@@ -9,7 +9,7 @@ use pinocchio::{
 };
 use pinocchio_log::log;
 
-pub fn process(_program_id: &pinocchio::Address, accounts: &[AccountView], data: &[u8]) -> ProgramResult {
+pub fn process(_program_id: &pinocchio::Address, accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
    if data.len() != 16 {
       log!("cpi_entry_dual_via_vault: expected 16 bytes (two u64 LE)");
       return Err(ProgramError::InvalidInstructionData);

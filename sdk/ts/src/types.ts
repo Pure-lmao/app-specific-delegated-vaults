@@ -1,17 +1,17 @@
 import type { Address } from '@solana/addresses';
 
 /**
- * Decoded on-chain `UserVaultAccount`.
+ * Decoded on-chain `UserVaultAccount` (`#[repr(C)]`: discriminator, bump, counts, expiry, then pubkeys).
  * `ataCount` is the raw `u16` from account data (use `number`; max 65535).
  */
 export type UserVaultAccountData = Readonly<{
    discriminator: number; // 0
+   bump: number;
+   ataCount: number;
+   delegateExpires: number;
    owner: Address;
    appAddress: Address;
    delegate: Address;
-   delegateExpires: number;
-   ataCount: number;
-   bump: number;
 }>;
 
 export type CreateUserVaultInput = Readonly<{

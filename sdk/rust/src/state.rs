@@ -7,15 +7,16 @@ use crate::error::VaultSdkError;
 
 const PUBKEY_BYTES: usize = 32;
 
-/// Decoded `UserVaultAccount` account data (includes leading discriminator as first field when unpacking from wire).
+/// Decoded `UserVaultAccount` account data (matches `#[repr(C)]` on-chain: discriminator, scalars, then pubkeys).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UserVaultAccount {
+   pub discriminator: u8,
+   pub bump: u8,
+   pub ata_count: u16,
+   pub delegate_expires: u32,
    pub owner: Pubkey,
    pub app_address: Pubkey,
    pub delegate: Pubkey,
-   pub delegate_expires: u32,
-   pub ata_count: u16,
-   pub bump: u8,
 }
 
 impl UserVaultAccount {
@@ -33,7 +34,24 @@ impl UserVaultAccount {
       if data[0] != USER_VAULT_DISCRIMINATOR {
          return Err(VaultSdkError::InvalidDiscriminator(data[0]));
       }
-      let mut o = 1usize;
+      let bump = data[1];
+      let ata_count = u16::from_le_bytes(
+         data[2..4]
+            .try_into()
+            .map_err(|_| VaultSdkError::WrongAccountDataLen {
+               expected: Self::LEN,
+               got: data.len(),
+            })?,
+      );
+      let delegate_expires = u32::from_le_bytes(
+         data[4..8]
+            .try_into()
+            .map_err(|_| VaultSdkError::WrongAccountDataLen {
+               expected: Self::LEN,
+               got: data.len(),
+            })?,
+      );
+      let mut o = 8usize;
       let owner = Pubkey::new_from_array(
          data[o..o + PUBKEY_BYTES]
             .try_into()
@@ -60,33 +78,14 @@ impl UserVaultAccount {
                got: data.len(),
             })?,
       );
-      o += PUBKEY_BYTES;
-      let delegate_expires = u32::from_le_bytes(
-         data[o..o + 4]
-            .try_into()
-            .map_err(|_| VaultSdkError::WrongAccountDataLen {
-               expected: Self::LEN,
-               got: data.len(),
-            })?,
-      );
-      o += 4;
-      let ata_count = u16::from_le_bytes(
-         data[o..o + 2]
-            .try_into()
-            .map_err(|_| VaultSdkError::WrongAccountDataLen {
-               expected: Self::LEN,
-               got: data.len(),
-            })?,
-      );
-      o += 2;
-      let bump = data[o];
       Ok(Self {
+         discriminator: data[0],
+         bump,
+         ata_count,
+         delegate_expires,
          owner,
          app_address,
          delegate,
-         delegate_expires,
-         ata_count,
-         bump,
       })
    }
 }

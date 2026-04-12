@@ -11,13 +11,13 @@
 //! - Run a subset: `cargo vault-test create_user_vault::` or a single test name (substring filter).
 //! - Use `--nocapture` so `eprintln!` output is visible: `cargo test -p app-specific-delegated-vaults --features test-sbf --test mollusk_vault -- --nocapture FILTER`.
 //! - After `process_and_validate_instruction`, the returned `InstructionResult` includes
-//!   `compute_units_consumed`. Call `crate::common::log_cu("label", &result)` or read that field.
+//!   `compute_units_consumed`. Use `crate::common::log_cu_bench` / `log_cu_setup` or read that field.
 //! - `compute_units_consumed` includes **every program** invoked in that instruction (vault + SPL CPIs). Pinning
 //!   exact CU in `Check::compute_units(...)` is brittle when dependencies change; prefer logging while tuning.
 //! - Mollusk’s crate README describes a compute-unit bencher / fixtures for regression tracking.
-//! - Full CU table for every `log_cu` step: set `VAULT_CU_REPORT` to a path (see `common::log_cu`) or run
-//!   `.\scripts\generate-cu-report.ps1` from `program/` to write `tests/cu-report.tsv` and
-//!   `tests/cu-report-summary.tsv`. `log_cu` is only used on instructions inside `#[test]` bodies (not shared fixture helpers).
+//! - **`tests/cu-success.tsv`**: happy-path CUs only, one row per major instruction (run `.\scripts\generate-cu-report.ps1`).
+//! - `VAULT_CU_REPORT` / that script also write full `cu-report.tsv` (`log_cu_bench` only; **`log_cu_setup`** omits fixture steps).
+//! - `app_ix` / CPI success tests add split rows in the full report; `cu-success` uses each flow’s `bench_total` only.
 
 use std::sync::Once;
 

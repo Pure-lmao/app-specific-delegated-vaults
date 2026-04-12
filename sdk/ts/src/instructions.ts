@@ -4,6 +4,7 @@ import { AccountRole, type AccountMeta, type Instruction } from '@solana/instruc
 import {
    ASSOCIATED_TOKEN_PROGRAM_ADDRESS,
    SYSTEM_PROGRAM_ADDRESS,
+   SYSVAR_CLOCK_ADDRESS,
    SYSVAR_INSTRUCTIONS_ADDRESS,
    USER_VAULT_SEED,
    VAULT_PROGRAM_ADDRESS,
@@ -27,8 +28,8 @@ import type {
 } from './types';
 
 /**
- * `cpi_entry` / `cpi_entry_native` are invoked via CPI from the registered app program (include the instructions
- * sysvar `Sysvar1nstructions1111111111111111111111111`). Builders below match `cpi_entry.rs` / `cpi_entry_native.rs`.
+ * `cpi_entry` / `cpi_entry_native` are invoked via CPI from the registered app program (instructions + clock sysvars).
+ * Builders match `cpi_entry.rs` / `cpi_entry_native.rs`.
  */
 
 const textEncoder = new TextEncoder();
@@ -180,25 +181,22 @@ export function getWithdrawUserVaultInstruction(input: {
    };
 }
 
-/** Matches `withdraw_user_vault_native.rs`: owner receives lamports from the vault PDA (4 accounts). */
+/** Matches `withdraw_user_vault_native.rs`: owner receives lamports from the vault PDA (3 accounts). */
 export function getWithdrawUserVaultNativeInstruction(input: {
    accounts: Readonly<{
       owner: Address;
       userVaultPda: Address;
       appAddress: Address;
-      systemProgram?: Address;
    }>;
    data: WithdrawUserVaultNativeInput;
 }): Instruction {
    assertU64Amount(input.data.amount, 'withdrawUserVaultNative amount');
-   const systemProgram = input.accounts.systemProgram ?? SYSTEM_PROGRAM_ADDRESS;
    return {
       programAddress: VAULT_PROGRAM_ADDRESS,
       accounts: [
          { address: input.accounts.owner, role: AccountRole.WRITABLE_SIGNER },
          { address: input.accounts.userVaultPda, role: AccountRole.WRITABLE },
          { address: input.accounts.appAddress, role: AccountRole.READONLY },
-         { address: systemProgram, role: AccountRole.READONLY },
       ] as const satisfies readonly AccountMeta[],
       data: encodeVaultIx({ kind: 'withdrawUserVaultNative', amount: input.data.amount }),
    };
@@ -235,8 +233,7 @@ export function getAppIxInstruction(input: {
 
 /**
  * Vault `CpiEntry` — 11 accounts (`program/src/instructions/cpi_entry.rs`).
- * Ends with instructions sysvar + system program. Vault PDA / lamports dest writable only when `amountNative > 0n`;
- * vault ATA / dest ATA writable only when `amount > 0n`.
+ * Ends with instructions sysvar + clock sysvar. Writable flags follow `amountNative` / `amount`.
  */
 export function getCpiEntryInstruction(input: {
    accounts: Readonly<{
@@ -250,13 +247,15 @@ export function getCpiEntryInstruction(input: {
       mint: Address;
       tokenProgram: Address;
       instructionsSysvar?: Address;
-      systemProgram?: Address;
+      clockSysvar?: Address;
    }>;
    data: CpiEntryInput;
 }): Instruction {
    assertCpiEntryAmounts(input.data.amountNative, input.data.amount);
+   const wNative = input.data.amountNative > 0n;
+   const wSpl = input.data.amount > 0n;
    const sysvar = input.accounts.instructionsSysvar ?? SYSVAR_INSTRUCTIONS_ADDRESS;
-   const systemProgram = input.accounts.systemProgram ?? SYSTEM_PROGRAM_ADDRESS;
+   const clock = input.accounts.clockSysvar ?? SYSVAR_CLOCK_ADDRESS;
    return {
       programAddress: VAULT_PROGRAM_ADDRESS,
       accounts: [
@@ -264,16 +263,25 @@ export function getCpiEntryInstruction(input: {
          { address: input.accounts.owner, role: AccountRole.READONLY },
          {
             address: input.accounts.userVaultPda,
-            role: input.data.amountNative > 0n ? AccountRole.WRITABLE : AccountRole.READONLY,
+            role: wNative ? AccountRole.WRITABLE : AccountRole.READONLY,
          },
-         { address: input.accounts.userVaultAta, role: AccountRole.WRITABLE },
+         {
+            address: input.accounts.userVaultAta,
+            role: wSpl ? AccountRole.WRITABLE : AccountRole.READONLY,
+         },
          { address: input.accounts.appAddress, role: AccountRole.READONLY },
-         { address: input.accounts.lamportsDest, role: AccountRole.WRITABLE },
-         { address: input.accounts.destAta, role: AccountRole.WRITABLE },
+         {
+            address: input.accounts.lamportsDest,
+            role: wNative ? AccountRole.WRITABLE : AccountRole.READONLY,
+         },
+         {
+            address: input.accounts.destAta,
+            role: wSpl ? AccountRole.WRITABLE : AccountRole.READONLY,
+         },
          { address: input.accounts.mint, role: AccountRole.READONLY },
          { address: input.accounts.tokenProgram, role: AccountRole.READONLY },
          { address: sysvar, role: AccountRole.READONLY },
-         { address: systemProgram, role: AccountRole.READONLY },
+         { address: clock, role: AccountRole.READONLY },
       ] as const satisfies readonly AccountMeta[],
       data: encodeVaultIx({
          kind: 'cpiEntry',
@@ -283,7 +291,7 @@ export function getCpiEntryInstruction(input: {
    };
 }
 
-/** Vault `CpiEntryNative` — 7 accounts (`program/src/instructions/cpi_entry_native.rs`; sysvar + system program). */
+/** Vault `CpiEntryNative` — 7 accounts (`program/src/instructions/cpi_entry_native.rs`; instructions + clock sysvars). */
 export function getCpiEntryNativeInstruction(input: {
    accounts: Readonly<{
       delegate: Address;
@@ -292,13 +300,13 @@ export function getCpiEntryNativeInstruction(input: {
       appAddress: Address;
       lamportsDest: Address;
       instructionsSysvar?: Address;
-      systemProgram?: Address;
+      clockSysvar?: Address;
    }>;
    data: CpiEntryNativeInput;
 }): Instruction {
    assertU64Amount(input.data.amountNative, 'cpiEntryNative amountNative');
    const sysvar = input.accounts.instructionsSysvar ?? SYSVAR_INSTRUCTIONS_ADDRESS;
-   const systemProgram = input.accounts.systemProgram ?? SYSTEM_PROGRAM_ADDRESS;
+   const clock = input.accounts.clockSysvar ?? SYSVAR_CLOCK_ADDRESS;
    return {
       programAddress: VAULT_PROGRAM_ADDRESS,
       accounts: [
@@ -308,7 +316,7 @@ export function getCpiEntryNativeInstruction(input: {
          { address: input.accounts.appAddress, role: AccountRole.READONLY },
          { address: input.accounts.lamportsDest, role: AccountRole.WRITABLE },
          { address: sysvar, role: AccountRole.READONLY },
-         { address: systemProgram, role: AccountRole.READONLY },
+         { address: clock, role: AccountRole.READONLY },
       ] as const satisfies readonly AccountMeta[],
       data: encodeVaultIx({
          kind: 'cpiEntryNative',

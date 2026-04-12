@@ -1,24 +1,28 @@
 use crate::common::{
-   all_loader_accounts, derive_user_vault, fresh_mollusk, instructions_sysvar_for, ix_create, log_cu,
-   overlay_accounts, signer_account, system_program_meta, test_program_id, token_program_id, vault_program_id,
+   all_loader_accounts, clock_sysvar_pk, derive_user_vault, fresh_mollusk, instructions_sysvar_for, ix_create,
+   log_cu_bench, log_cu_setup, overlay_accounts, rent_sysvar_account, rent_sysvar_pk, signer_account,
+   system_program_meta, test_program_id, token_program_id, vault_program_id,
 };
+use mollusk_svm::Mollusk;
 use mollusk_svm::result::Check;
 use mollusk_svm_programs_token::{associated_token, token};
 use solana_account::Account;
 use solana_instruction::{AccountMeta, Instruction};
 use solana_program_error::ProgramError;
 use solana_pubkey::Pubkey;
-fn create_five_account_setup() -> (Pubkey, Pubkey, Pubkey, Pubkey, Vec<(Pubkey, Account)>) {
+fn create_user_vault_fixture(mollusk: &Mollusk) -> (Pubkey, Pubkey, Pubkey, Pubkey, Vec<(Pubkey, Account)>) {
    let owner = Pubkey::new_unique();
    let app = test_program_id();
    let delegate = Pubkey::new_unique();
    let (pda, _) = derive_user_vault(&owner, &app);
    let (sys_pk, sys_acct) = system_program_meta();
+   let (rent_pk, rent_acct) = rent_sysvar_account(mollusk);
    let accounts = vec![
       (owner, signer_account(1_000_000_000)),
       (pda, Account::default()),
       (app, Account::default()),
       (delegate, Account::default()),
+      (rent_pk, rent_acct),
       (sys_pk, sys_acct),
    ];
    (owner, app, delegate, pda, accounts)
@@ -29,7 +33,7 @@ fn router_rejects_empty_ix_data() {
    let mollusk = fresh_mollusk();
    let ix = Instruction::new_with_bytes(vault_program_id(), &[], vec![]);
    let r = mollusk.process_and_validate_instruction(&ix, &[], &[Check::err(ProgramError::InvalidInstructionData)]);
-   log_cu("instruction_router::router_rejects_empty_ix_data", &r);
+   log_cu_bench("instruction_router::router_rejects_empty_ix_data", &r);
 }
 
 #[test]
@@ -37,7 +41,7 @@ fn router_rejects_unknown_discriminator() {
    let mollusk = fresh_mollusk();
    let ix = Instruction::new_with_bytes(vault_program_id(), &[255], vec![]);
    let r = mollusk.process_and_validate_instruction(&ix, &[], &[Check::err(ProgramError::InvalidInstructionData)]);
-   log_cu("instruction_router::router_rejects_unknown_discriminator", &r);
+   log_cu_bench("instruction_router::router_rejects_unknown_discriminator", &r);
 }
 
 #[test]
@@ -80,7 +84,7 @@ fn deposit_rejects_truncated_amount() {
       (ata, associated_token::keyed_account().1),
    ];
    let r = mollusk.process_and_validate_instruction(&ix, &accounts, &[Check::err(ProgramError::InvalidInstructionData)]);
-   log_cu("instruction_router::deposit_rejects_truncated_amount", &r);
+   log_cu_bench("instruction_router::deposit_rejects_truncated_amount", &r);
 }
 
 #[test]
@@ -120,13 +124,13 @@ fn withdraw_rejects_truncated_amount() {
       &all_loader_accounts(),
    ]);
    let r = mollusk.process_and_validate_instruction(&ix, &accounts, &[Check::err(ProgramError::InvalidInstructionData)]);
-   log_cu("instruction_router::withdraw_rejects_truncated_amount", &r);
+   log_cu_bench("instruction_router::withdraw_rejects_truncated_amount", &r);
 }
 
 #[test]
 fn create_rejects_truncated_delegate_expires() {
    let mollusk = fresh_mollusk();
-   let (owner, app, delegate, pda, accounts) = create_five_account_setup();
+   let (owner, app, delegate, pda, accounts) = create_user_vault_fixture(&mollusk);
    let ix = Instruction::new_with_bytes(
       vault_program_id(),
       &[0u8, 1, 2],
@@ -135,17 +139,18 @@ fn create_rejects_truncated_delegate_expires() {
          AccountMeta::new(pda, false),
          AccountMeta::new_readonly(app, false),
          AccountMeta::new_readonly(delegate, false),
-         AccountMeta::new_readonly(accounts[4].0, false),
+         AccountMeta::new_readonly(rent_sysvar_pk(), false),
+         AccountMeta::new_readonly(accounts[5].0, false),
       ],
    );
    let r = mollusk.process_and_validate_instruction(&ix, &accounts, &[Check::err(ProgramError::InvalidInstructionData)]);
-   log_cu("instruction_router::create_rejects_truncated_delegate_expires", &r);
+   log_cu_bench("instruction_router::create_rejects_truncated_delegate_expires", &r);
 }
 
 #[test]
 fn update_delegate_rejects_truncated_expires() {
    let mollusk = fresh_mollusk();
-   let (owner, app, delegate_old, pda, base) = create_five_account_setup();
+   let (owner, app, delegate_old, pda, base) = create_user_vault_fixture(&mollusk);
    let create_ix = Instruction::new_with_bytes(
       vault_program_id(),
       &ix_create(0),
@@ -154,12 +159,13 @@ fn update_delegate_rejects_truncated_expires() {
          AccountMeta::new(pda, false),
          AccountMeta::new_readonly(app, false),
          AccountMeta::new_readonly(delegate_old, false),
-         AccountMeta::new_readonly(base[4].0, false),
+         AccountMeta::new_readonly(rent_sysvar_pk(), false),
+         AccountMeta::new_readonly(base[5].0, false),
       ],
    );
    let r_create =
       mollusk.process_and_validate_instruction(&create_ix, &base, &[Check::success()]);
-   log_cu("instruction_router::update_delegate_rejects_truncated_expires:create", &r_create);
+   log_cu_setup("instruction_router::update_delegate_rejects_truncated_expires:create", &r_create);
    let ix = Instruction::new_with_bytes(
       vault_program_id(),
       &[2u8, 9],
@@ -172,7 +178,7 @@ fn update_delegate_rejects_truncated_expires() {
    );
    let acc2: Vec<_> = base.iter().take(4).cloned().collect();
    let r_upd = mollusk.process_and_validate_instruction(&ix, &acc2, &[Check::err(ProgramError::InvalidInstructionData)]);
-   log_cu("instruction_router::update_delegate_rejects_truncated_expires:update", &r_upd);
+   log_cu_bench("instruction_router::update_delegate_rejects_truncated_expires:update", &r_upd);
 }
 
 #[test]
@@ -187,7 +193,6 @@ fn cpi_entry_rejects_truncated_payload() {
    let lamports_dest = Pubkey::new_unique();
    let dest_ata = Pubkey::new_unique();
    let mint = Pubkey::new_unique();
-   let (sys_pk, sys_acct) = system_program_meta();
    let data = vec![6u8, 1, 2, 3, 4, 5, 6, 7];
    let ix = Instruction::new_with_bytes(
       vault_program_id(),
@@ -203,10 +208,11 @@ fn cpi_entry_rejects_truncated_payload() {
          AccountMeta::new_readonly(mint, false),
          AccountMeta::new_readonly(tok, false),
          AccountMeta::new_readonly(solana_instructions_sysvar::ID, false),
-         AccountMeta::new_readonly(sys_pk, false),
+         AccountMeta::new_readonly(clock_sysvar_pk(), false),
       ],
    );
    let (ixs_pk, ixs_acct) = instructions_sysvar_for(&ix);
+   let (clock_pk, clock_acct) = mollusk.sysvars.keyed_account_for_clock_sysvar();
    let accounts = overlay_accounts(&[
       &[
          (delegate, signer_account(1_000_000_000)),
@@ -219,12 +225,12 @@ fn cpi_entry_rejects_truncated_payload() {
          (mint, Account::default()),
          (tok, token::keyed_account().1),
          (ixs_pk, ixs_acct),
-         (sys_pk, sys_acct),
+         (clock_pk, clock_acct),
       ],
       &all_loader_accounts(),
    ]);
    let r = mollusk.process_and_validate_instruction(&ix, &accounts, &[Check::err(ProgramError::InvalidInstructionData)]);
-   log_cu("instruction_router::cpi_entry_rejects_truncated_payload", &r);
+   log_cu_bench("instruction_router::cpi_entry_rejects_truncated_payload", &r);
 }
 
 #[test]
@@ -235,7 +241,6 @@ fn cpi_entry_native_rejects_truncated_payload() {
    let (pda, _) = derive_user_vault(&owner, &app);
    let delegate = Pubkey::new_unique();
    let lamports_dest = Pubkey::new_unique();
-   let (sys_pk, sys_acct) = system_program_meta();
    let data = vec![7u8, 1, 2, 3];
    let ix = Instruction::new_with_bytes(
       vault_program_id(),
@@ -247,10 +252,11 @@ fn cpi_entry_native_rejects_truncated_payload() {
          AccountMeta::new_readonly(app, false),
          AccountMeta::new(lamports_dest, false),
          AccountMeta::new_readonly(solana_instructions_sysvar::ID, false),
-         AccountMeta::new_readonly(sys_pk, false),
+         AccountMeta::new_readonly(clock_sysvar_pk(), false),
       ],
    );
    let (ixs_pk, ixs_acct) = instructions_sysvar_for(&ix);
+   let (clock_pk, clock_acct) = mollusk.sysvars.keyed_account_for_clock_sysvar();
    let accounts = overlay_accounts(&[
       &[
          (delegate, signer_account(1_000_000_000)),
@@ -259,10 +265,10 @@ fn cpi_entry_native_rejects_truncated_payload() {
          (app, Account::default()),
          (lamports_dest, Account::default()),
          (ixs_pk, ixs_acct),
-         (sys_pk, sys_acct),
+         (clock_pk, clock_acct),
       ],
       &all_loader_accounts(),
    ]);
    let r = mollusk.process_and_validate_instruction(&ix, &accounts, &[Check::err(ProgramError::InvalidInstructionData)]);
-   log_cu("instruction_router::cpi_entry_native_rejects_truncated_payload", &r);
+   log_cu_bench("instruction_router::cpi_entry_native_rejects_truncated_payload", &r);
 }

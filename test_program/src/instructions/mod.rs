@@ -1,7 +1,8 @@
-//! Instruction discriminators `0` … `5`.
+//! Instruction discriminators `0` … `7` (6–7 are bench no-ops for tests).
 
 use pinocchio::{error::ProgramError, AccountView, Address, ProgramResult};
 
+mod bench_noop;
 mod claim_from_user;
 mod claim_via_cpi;
 mod cpi_entry_dual_via_vault;
@@ -20,10 +21,14 @@ pub enum Instruction {
    ClaimFromUser = 3,
    CpiEntryNativeViaVault = 4,
    CpiEntryDualViaVault = 5,
+   /// Inner ix for vault `app_ix` CU shell (no-op app).
+   BenchNoopInner = 6,
+   /// Top-level no-op (minimal `test_program` frame).
+   BenchNoopTopLevel = 7,
 }
 
 #[inline(never)]
-pub fn dispatch(program_id: &Address, d: u8, data: &[u8], accounts: &[AccountView]) -> ProgramResult {
+pub fn dispatch(program_id: &Address, d: u8, data: &[u8], accounts: &mut [AccountView]) -> ProgramResult {
    if d == Instruction::DepositViaCpi as u8 {
       deposit_via_cpi::process(program_id, accounts, data)
    } else if d == Instruction::ClaimViaCpi as u8 {
@@ -36,6 +41,8 @@ pub fn dispatch(program_id: &Address, d: u8, data: &[u8], accounts: &[AccountVie
       cpi_entry_native_via_vault::process(program_id, accounts, data)
    } else if d == Instruction::CpiEntryDualViaVault as u8 {
       cpi_entry_dual_via_vault::process(program_id, accounts, data)
+   } else if d == Instruction::BenchNoopInner as u8 || d == Instruction::BenchNoopTopLevel as u8 {
+      bench_noop::process(program_id, accounts, data)
    } else {
       log!("unknown instruction");
       Err(ProgramError::InvalidInstructionData)

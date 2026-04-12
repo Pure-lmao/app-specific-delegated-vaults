@@ -193,23 +193,23 @@ export const getVaultInstructionDataDecoder = (): Decoder<DecodedVaultInstructio
 export const getUserVaultAccountEncoder = (): Encoder<UserVaultAccountData> =>
    getStructEncoder([
       ['discriminator', getU8Encoder()],
+      ['bump', getU8Encoder()],
+      ['ataCount', getU16Encoder()],
+      ['delegateExpires', getU32Encoder()],
       ['owner', getAddressEncoder()],
       ['appAddress', getAddressEncoder()],
       ['delegate', getAddressEncoder()],
-      ['delegateExpires', getU32Encoder()],
-      ['ataCount', getU16Encoder()],
-      ['bump', getU8Encoder()],
    ]);
 
 export const getUserVaultAccountDecoder = (): Decoder<UserVaultAccountData> =>
    getStructDecoder([
       ['discriminator', getU8Decoder()],
+      ['bump', getU8Decoder()],
+      ['ataCount', getU16Decoder()],
+      ['delegateExpires', getU32Decoder()],
       ['owner', getAddressDecoder()],
       ['appAddress', getAddressDecoder()],
       ['delegate', getAddressDecoder()],
-      ['delegateExpires', getU32Decoder()],
-      ['ataCount', getU16Decoder()],
-      ['bump', getU8Decoder()],
    ]);
 
 export const decodeUserVaultAccountData = (data: ReadonlyUint8Array): UserVaultAccountData =>

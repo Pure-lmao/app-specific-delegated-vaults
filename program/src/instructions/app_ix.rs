@@ -1,12 +1,13 @@
 //! Delegate-signed entrypoint: CPI from this program into `app_address`, with the vault PDA as a
 //! signer (PDA seeds). Validates delegate + expiry; inner instruction uses `inner_accounts` and `data`.
 //!
-//! Accounts: 4 fixed, then all accounts required by the inner app instruction (same order as that ix).
+//! Accounts: 5 fixed, then all accounts required by the inner app instruction (same order as that ix).
 //! 0. `delegate` (signer) — must match vault state
 //! 1. `owner` (readonly)
 //! 2. `user_vault_pda` (readonly)
 //! 3. `app_address` (readonly)
-//! 4.. `inner_accounts` — metas for the CPI to the app program
+//! 4. `clock_sysvar` (readonly) — `SysvarC1ock11111111111111111111111111111111`
+//! 5.. `inner_accounts` — metas for the CPI to the app program
 //!
 //! Data: `[discriminator (u8), ...inner_instruction_data]`
 
@@ -14,43 +15,46 @@ use core::mem::MaybeUninit;
 
 use crate::{
    constants::USER_VAULT_SEED,
-   error::Error,
-   helpers::{load_user_vault, require_delegate_not_expired, require_signer},
+   helpers::{
+      assert_user_vault_is_owned_by_program_and_correct_length, get_vault_bump,
+      get_vault_delegate_expires, require_delegate_not_expired, require_signer,
+      verify_vault_delegate, verify_vault_owner_and_app_address,
+   },
 };
 use pinocchio::{
    cpi::{invoke_signed_with_slice, Seed, Signer, MAX_STATIC_CPI_ACCOUNTS},
    error::ProgramError,
    instruction::{InstructionAccount, InstructionView},
-   AccountView, Address, ProgramResult,
+   AccountView, ProgramResult,
    hint::unlikely,
 };
 use pinocchio_log::log;
 
 #[inline(never)]
-pub fn process(program_id: &Address, accounts: &[AccountView], data: &[u8]) -> ProgramResult {
+pub fn process(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
    let [
       delegate,
       owner,
       user_vault_pda,
       app_address,
+      clock_sysvar,
       inner_accounts @ ..,
    ] = accounts else {
-      log!("app_ix: not enough account keys (need delegate, owner, user_vault_pda, app_address)");
+      log!("app_ix: not enough account keys (delegate, owner, user_vault_pda, app_address, clock, ...)");
       return Err(ProgramError::NotEnoughAccountKeys);
    };
 
    require_signer(delegate)?;
 
-   let vault_state = load_user_vault(program_id, user_vault_pda, owner.address(), app_address.address())?;
+   assert_user_vault_is_owned_by_program_and_correct_length(user_vault_pda)?;
+   verify_vault_owner_and_app_address(user_vault_pda, owner.address(), app_address.address())?;
+   verify_vault_delegate(user_vault_pda, delegate.address())?;
+   require_delegate_not_expired(
+      get_vault_delegate_expires(user_vault_pda),
+      clock_sysvar
+   )?;
 
-   if unlikely(delegate.address() != &vault_state.delegate) {
-      log!("app_ix: delegate does not match vault state");
-      return Err(Error::InvalidUserVaultDelegate.into());
-   }
-
-   require_delegate_not_expired(vault_state.delegate_expires)?;
-
-   let bump_seed = [vault_state.bump];
+   let bump_seed = [get_vault_bump(user_vault_pda)];
    let signer_seeds = [
       Seed::from(USER_VAULT_SEED),
       Seed::from(owner.address().as_ref()),
@@ -71,7 +75,8 @@ pub fn process(program_id: &Address, accounts: &[AccountView], data: &[u8]) -> P
          accounts: &[],
          data,
       };
-      return invoke_signed_with_slice(&ix, &[], &signers).map_err(|e| {
+      let no_accounts: &[AccountView] = &[];
+      return invoke_signed_with_slice(&ix, no_accounts, &signers).map_err(|e| {
          log!("app_ix: invoke failed");
          e
       });

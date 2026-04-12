@@ -1,25 +1,29 @@
 //! Create the per-user vault PDA `["vault", owner, app_address]`: stores delegate metadata for app CPI
 //! and direct `app_ix`. Owner signs and funds account creation.
 //!
-//! Accounts (5):
+//! Accounts (6):
 //! 0. `owner` (writable signer)
 //! 1. `user_vault_pda` (writable, uninitialized)
 //! 2. `app_address` (readonly)
 //! 3. `delegate` (readonly) — initial delegate pubkey stored in state
-//! 4. `system_program` (readonly)
+//! 4. `rent_sysvar` (readonly) — `SysvarRent111111111111111111111111111111111`
+//! 5. `system_program` (readonly)
 //!
 //! Data: `[discriminator (u8), delegate_expires (u32)]` — Unix seconds; use `u32::MAX` for no practical expiry.
 
 use crate::{
-   constants::{ID, USER_VAULT_SEED}, error::Error, helpers::{
-      assert_pda_uninitialized, assert_system_program, derive_user_vault_pda, parse_u32_instruction_data, require_signer
-   }, state::UserVaultAccount
+   constants::{ID, USER_VAULT_DISCRIMINATOR, USER_VAULT_SEED},
+   error::Error,
+   helpers::{
+      assert_pda_uninitialized, assert_system_program, derive_user_vault_pda, parse_u32_instruction_data,
+      rent_minimum_balance_from_sysvar, require_signer,
+   },
+   state::UserVaultAccount,
 };
 use pinocchio::{
    cpi::{Seed, Signer},
    error::ProgramError,
    AccountView, Address, ProgramResult,
-   sysvars::{Sysvar,rent::Rent},
    hint::unlikely,
 };
 use pinocchio_log::log;
@@ -28,12 +32,13 @@ use pinocchio_system::ID as SYSTEM_PROGRAM_ID;
 
 
 #[inline(never)]
-pub fn process(program_id: &Address, accounts: &[AccountView], data: &[u8]) -> ProgramResult {
+pub fn process(program_id: &Address, accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
    let [
       owner,
       user_vault_pda,
       app_address,
       delegate_account,
+      rent_sysvar,
       system_program,
    ] = accounts else {
       log!("create_user_vault: not enough account keys");
@@ -42,7 +47,6 @@ pub fn process(program_id: &Address, accounts: &[AccountView], data: &[u8]) -> P
 
    require_signer(owner)?;
    assert_system_program(system_program)?;
-   let delegate = delegate_account.address().clone();
 
    let (expected_pda, bump) = derive_user_vault_pda(owner.address(), app_address.address(), program_id);
    if unlikely(user_vault_pda.address() != &expected_pda) {
@@ -57,8 +61,7 @@ pub fn process(program_id: &Address, accounts: &[AccountView], data: &[u8]) -> P
       e
    })?;
 
-   let rent = Rent::get()?;
-   let lamports = rent.try_minimum_balance(UserVaultAccount::LEN).map_err(|e| {
+   let lamports = rent_minimum_balance_from_sysvar(rent_sysvar, UserVaultAccount::LEN).map_err(|e| {
       log!("create_user_vault: rent minimum balance failed");
       e
    })?;
@@ -86,12 +89,13 @@ pub fn process(program_id: &Address, accounts: &[AccountView], data: &[u8]) -> P
    })?;
 
    let state = UserVaultAccount {
+      discriminator: USER_VAULT_DISCRIMINATOR,
+      bump,
+      ata_count: 0,
+      delegate_expires: expires,
       owner: owner.address().clone(),
       app_address: app_address.address().clone(),
-      delegate,
-      delegate_expires: expires,
-      ata_count: 0,
-      bump,
+      delegate: delegate_account.address().clone(),
    };
    {
       let mut dst = user_vault_pda.try_borrow_mut()?;

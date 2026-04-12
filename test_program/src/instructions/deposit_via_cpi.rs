@@ -1,6 +1,6 @@
 //! CPI → vault **`CpiEntry`** (`6`). One of two `_via_cpi` entrypoints (with `claim_via_cpi`) to exercise the same vault path with different `dest_ata` / amounts in tests.
 //!
-//! Accounts (12): `vault_program` (readonly), then the 11 vault `cpi_entry` accounts (instructions sysvar + system program).
+//! Accounts (12): `vault_program` (readonly), then the 11 vault `cpi_entry` accounts (instructions + clock sysvars).
 
 use crate::helpers::parse_u64_instruction_data;
 
@@ -13,7 +13,7 @@ use pinocchio::{
 };
 use pinocchio_log::log;
 
-pub fn process(_program_id: &pinocchio::Address, accounts: &[AccountView], data: &[u8]) -> ProgramResult {
+pub fn process(_program_id: &pinocchio::Address, accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
    let amount = parse_u64_instruction_data(data).map_err(|e| {
       log!("deposit_via_cpi: bad amount");
       e

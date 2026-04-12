@@ -1,7 +1,7 @@
 use crate::common::{
-   associated_token_address, derive_user_vault, fresh_mollusk, ix_create, ix_deposit, ix_withdraw, log_cu,
-   merge_accounts, mint_account, signer_account, system_program_meta, test_program_id, token_account,
-   token_program_id, vault_program_id,
+   associated_token_address, derive_user_vault, fresh_mollusk, ix_create, ix_deposit, ix_withdraw, log_cu_bench,
+   merge_accounts, mint_account, rent_sysvar_account, rent_sysvar_pk, signer_account, system_program_meta,
+   test_program_id, token_account, token_program_id, vault_program_id,
 };
 use mollusk_svm::result::Check;
 use mollusk_svm_programs_token::{associated_token, token};
@@ -35,6 +35,7 @@ fn vault_funded_for_withdraw() -> (
    let source_acct = token_account(&mint_pk, &owner, 5_000_000);
    let vault_ata = associated_token_address(&pda, &mint_pk);
    let (sys_pk, sys_acct) = system_program_meta();
+   let (rent_pk, rent_acct) = rent_sysvar_account(&mollusk);
    let tok = token_program_id();
    let ata = associated_token::ID;
 
@@ -43,6 +44,7 @@ fn vault_funded_for_withdraw() -> (
       (pda, Account::default()),
       (app, Account::default()),
       (delegate, Account::default()),
+      (rent_pk, rent_acct),
       (sys_pk, sys_acct.clone()),
    ];
    let create_ix = Instruction::new_with_bytes(
@@ -53,6 +55,7 @@ fn vault_funded_for_withdraw() -> (
          AccountMeta::new(pda, false),
          AccountMeta::new_readonly(app, false),
          AccountMeta::new_readonly(delegate, false),
+         AccountMeta::new_readonly(rent_sysvar_pk(), false),
          AccountMeta::new_readonly(sys_pk, false),
       ],
    );
@@ -126,7 +129,7 @@ fn withdraw_success() {
       ],
    );
    let r2 = mollusk.process_and_validate_instruction(&w_ix, &merged_w, &[Check::success()]);
-   log_cu("withdraw_user_vault::withdraw_success", &r2);
+   log_cu_bench("withdraw_user_vault::withdraw_success", &r2);
    let va = r2.get_account(&vault_ata).unwrap();
    let da = r2.get_account(&dest_ata).unwrap();
    let v_bal = SplTokenAccount::unpack(&va.data).unwrap().amount;
@@ -166,7 +169,7 @@ fn withdraw_fails_zero_amount() {
       &merged_w,
       &[Check::err(ProgramError::InvalidInstructionData)],
    );
-   log_cu("withdraw_user_vault::withdraw_fails_zero_amount", &r);
+   log_cu_bench("withdraw_user_vault::withdraw_fails_zero_amount", &r);
 }
 
 #[test]
@@ -200,7 +203,7 @@ fn withdraw_fails_owner_not_signer() {
       &merged_w,
       &[Check::err(ProgramError::Custom(Error::NotSigner as u32))],
    );
-   log_cu("withdraw_user_vault::withdraw_fails_owner_not_signer", &r);
+   log_cu_bench("withdraw_user_vault::withdraw_fails_owner_not_signer", &r);
 }
 
 #[test]
@@ -230,6 +233,6 @@ fn withdraw_fails_insufficient_balance() {
       ],
    );
    let r = mollusk.process_instruction(&w_ix, &merged_w);
-   log_cu("withdraw_user_vault::withdraw_fails_insufficient_balance", &r);
+   log_cu_bench("withdraw_user_vault::withdraw_fails_insufficient_balance", &r);
    assert!(r.program_result.is_err());
 }

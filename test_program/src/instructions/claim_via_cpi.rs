@@ -12,7 +12,7 @@ use pinocchio::{
 };
 use pinocchio_log::log;
 
-pub fn process(_program_id: &pinocchio::Address, accounts: &[AccountView], data: &[u8]) -> ProgramResult {
+pub fn process(_program_id: &pinocchio::Address, accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
    let amount = parse_u64_instruction_data(data).map_err(|e| {
       log!("claim_via_cpi: bad amount");
       e

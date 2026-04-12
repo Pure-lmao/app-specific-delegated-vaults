@@ -16,20 +16,21 @@ use crate::{
    constants::USER_VAULT_SEED,
    error::Error,
    helpers::{
-      assert_spl_token_program, invoke_token_close_account, load_user_vault, require_signer,
-      verify_token_account,
+      assert_spl_token_program, assert_user_vault_is_owned_by_program_and_correct_length,
+      get_vault_ata_count, get_vault_bump, invoke_token_close_account,
+      require_signer, verify_token_account, verify_vault_owner_and_app_address,
    },
 };
 use pinocchio::{
    cpi::{Seed, Signer},
    error::ProgramError,
-   AccountView, Address, ProgramResult,
+   AccountView, ProgramResult,
    hint::unlikely,
 };
 use pinocchio_log::log;
 
 #[inline(never)]
-pub fn process(program_id: &Address, accounts: &[AccountView]) -> ProgramResult {
+pub fn process(accounts: &mut [AccountView]) -> ProgramResult {
    let [
       owner,
       user_vault_pda,
@@ -46,9 +47,11 @@ pub fn process(program_id: &Address, accounts: &[AccountView]) -> ProgramResult 
    require_signer(owner)?;
    assert_spl_token_program(token_program)?;
 
-   let mut vault = load_user_vault(program_id, user_vault_pda, owner.address(), app_address.address())?;
+   assert_user_vault_is_owned_by_program_and_correct_length(user_vault_pda)?;
+   verify_vault_owner_and_app_address(user_vault_pda, owner.address(), app_address.address())?;
 
-   if unlikely(vault.ata_count == 0) {
+   let ata_count = get_vault_ata_count(user_vault_pda);
+   if unlikely(ata_count == 0) {
       log!("close_vault_ata: ata_count already zero");
       return Err(Error::UserVaultAtaCountZero.into());
    }
@@ -64,7 +67,7 @@ pub fn process(program_id: &Address, accounts: &[AccountView]) -> ProgramResult 
       return Err(Error::UserVaultAtaNotEmpty.into());
    }
 
-   let bump_seed = [vault.bump];
+   let bump_seed = [get_vault_bump(user_vault_pda)];
    let signer_seeds = [
       Seed::from(USER_VAULT_SEED),
       Seed::from(owner.address().as_ref()),
@@ -78,13 +81,11 @@ pub fn process(program_id: &Address, accounts: &[AccountView]) -> ProgramResult 
       e
    })?;
 
-   vault.ata_count -= 1;
    {
       let mut dst = user_vault_pda.try_borrow_mut()?;
-      vault.pack(&mut dst).map_err(|e| {
-         log!("close_vault_ata: pack failed");
-         e
-      })?;
+      unsafe {
+         core::ptr::write(dst.as_mut_ptr().add(2) as *mut u16, ata_count - 1);
+      }
    }
 
    Ok(())

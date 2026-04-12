@@ -8,12 +8,15 @@
 //!
 //! Data: `[discriminator (u8), delegate_expires (u32)]` — Unix seconds; use `u32::MAX` for no practical expiry.
 
-use crate::helpers::{load_user_vault, parse_u32_instruction_data, require_signer};
-use pinocchio::{AccountView, Address, ProgramResult, error::ProgramError};
+use crate::helpers::{
+   assert_user_vault_is_owned_by_program_and_correct_length, parse_u32_instruction_data,
+   require_signer, verify_vault_owner_and_app_address,
+};
+use pinocchio::{AccountView, ProgramResult, error::ProgramError};
 use pinocchio_log::log;
 
 #[inline(never)]
-pub fn process(program_id: &Address, accounts: &[AccountView], data: &[u8]) -> ProgramResult {
+pub fn process(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
    let [
       owner,
       user_vault_pda,
@@ -31,15 +34,20 @@ pub fn process(program_id: &Address, accounts: &[AccountView], data: &[u8]) -> P
       e
    })?;
 
-   let mut vault = load_user_vault(program_id, user_vault_pda, owner.address(), app_address.address())?;
-   vault.delegate = delegate_account.address().clone();
-   vault.delegate_expires = expires;
+   assert_user_vault_is_owned_by_program_and_correct_length(user_vault_pda)?;
+   verify_vault_owner_and_app_address(user_vault_pda, owner.address(), app_address.address())?;
+
    {
       let mut dst = user_vault_pda.try_borrow_mut()?;
-      vault.pack(&mut dst).map_err(|e| {
-         log!("update_user_vault_delegate: pack failed");
-         e
-      })?;
+      let ptr = dst.as_mut_ptr();
+      unsafe {
+         core::ptr::copy_nonoverlapping(
+            delegate_account.address().as_ref().as_ptr(),
+            ptr.add(72),
+            32,
+         );
+         core::ptr::write(ptr.add(4) as *mut u32, expires);
+      }
    }
 
    Ok(())

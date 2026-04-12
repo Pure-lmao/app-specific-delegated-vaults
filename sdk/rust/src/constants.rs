@@ -7,14 +7,16 @@ pub use solana_pubkey::Pubkey;
 pub const USER_VAULT_SEED: &[u8] = b"vault";
 
 /// First byte of serialized on-chain `UserVaultAccount`.
-pub const USER_VAULT_DISCRIMINATOR: u8 = 0;
+pub const USER_VAULT_DISCRIMINATOR: u8 = 1;
 
 /// Default deployed vault program id (matches `sdk/ts/src/constants.ts` `VAULT_PROGRAM_ADDRESS`).
 pub const DEFAULT_VAULT_PROGRAM_ID: Pubkey = pubkey!("ASdvz39AFXXEGcYadGYPYhHprGadw1AeydQPqn4GqrV1");
 
 pub const SYSTEM_PROGRAM_ID: Pubkey = pubkey!("11111111111111111111111111111111");
-/// Instructions sysvar (`Sysvar1nstructions…`) — last-but-one account on `CpiEntry` / `CpiEntryNative`.
+/// Instructions sysvar (`Sysvar1nstructions…`) — account index 9 on `CpiEntry`, 5 on `CpiEntryNative`.
 pub const SYSVAR_INSTRUCTIONS_ID: Pubkey = pubkey!("Sysvar1nstructions1111111111111111111111111");
+/// Clock sysvar — account index 10 on `CpiEntry`, 6 on `CpiEntryNative`.
+pub const SYSVAR_CLOCK_ID: Pubkey = pubkey!("SysvarC1ock11111111111111111111111111111111");
 pub const ASSOCIATED_TOKEN_PROGRAM_ID: Pubkey = pubkey!("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 pub const SPL_TOKEN_PROGRAM_ID: Pubkey = pubkey!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 pub const SPL_TOKEN_2022_PROGRAM_ID: Pubkey = pubkey!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");

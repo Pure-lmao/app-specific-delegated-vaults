@@ -1,8 +1,9 @@
 use crate::common::{
-   associated_token_address, custom_vault_err, derive_user_vault, fresh_mollusk, ix_app_ix, ix_create, ix_deposit,
-   ix_test_cpi_entry_native_via_vault, ix_test_deposit_via_cpi, log_cu, merge_accounts, mint_account, set_clock_unix,
-   signer_account, system_program_meta, test_program_id, token_account, token_program_id, treasury_pda,
-   vault_program_id, with_ix_sysvar_and_loaders, with_loader_accounts,
+   associated_token_address, clock_sysvar_pk, custom_vault_err, derive_user_vault, fresh_mollusk, ix_app_ix, ix_create,
+   ix_deposit, ix_test_cpi_entry_native_via_vault, ix_test_deposit_via_cpi, log_cu_bench, merge_accounts, mint_account,
+   rent_sysvar_account, rent_sysvar_pk, set_clock_unix, signer_account, system_program_meta, test_program_id,
+   token_account, token_program_id, treasury_pda, vault_program_id, with_clock_and_loaders,
+   with_ix_sysvar_clock_and_loaders,
 };
 use mollusk_svm::result::Check;
 use mollusk_svm_programs_token::{associated_token, token};
@@ -46,6 +47,7 @@ fn vault_with_vault_tokens_and_app_ix_setup() -> VaultAppTokensFixture {
    let owner_source_acct = token_account(&mint_pk, &owner, 2_000_000);
    let vault_ata = associated_token_address(&pda, &mint_pk);
    let (sys_pk, sys_acct) = system_program_meta();
+   let (rent_pk, rent_acct) = rent_sysvar_account(&mollusk);
    let tok = token_program_id();
    let ata = associated_token::ID;
 
@@ -54,6 +56,7 @@ fn vault_with_vault_tokens_and_app_ix_setup() -> VaultAppTokensFixture {
       (pda, Account::default()),
       (app, Account::default()),
       (delegate, Account::default()),
+      (rent_pk, rent_acct),
       (sys_pk, sys_acct.clone()),
    ];
    let create_ix = Instruction::new_with_bytes(
@@ -64,6 +67,7 @@ fn vault_with_vault_tokens_and_app_ix_setup() -> VaultAppTokensFixture {
          AccountMeta::new(pda, false),
          AccountMeta::new_readonly(app, false),
          AccountMeta::new_readonly(delegate, false),
+         AccountMeta::new_readonly(rent_sysvar_pk(), false),
          AccountMeta::new_readonly(sys_pk, false),
       ],
    );
@@ -128,6 +132,7 @@ fn app_ix_ok_before_expiry() {
          AccountMeta::new(f.owner, true),
          AccountMeta::new_readonly(f.pda, false),
          AccountMeta::new_readonly(f.app, false),
+         AccountMeta::new_readonly(clock_sysvar_pk(), false),
          AccountMeta::new(f.delegate, true),
          AccountMeta::new(f.owner, true),
          AccountMeta::new(owner_source, false),
@@ -155,10 +160,10 @@ fn app_ix_ok_before_expiry() {
    let merged_app = merge_accounts(&app_accounts, &f.after_deposit);
    let r_app = f.mollusk.process_and_validate_instruction(
       &vault_ix,
-      &with_loader_accounts(&merged_app),
+      &with_clock_and_loaders(&f.mollusk, &merged_app),
       &[Check::success()],
    );
-   log_cu("delegate_expiry::app_ix_ok_before_expiry", &r_app);
+   log_cu_bench("delegate_expiry::app_ix_ok_before_expiry", &r_app);
 }
 
 #[test]
@@ -177,6 +182,7 @@ fn app_ix_fails_after_expiry() {
          AccountMeta::new(f.owner, true),
          AccountMeta::new_readonly(f.pda, false),
          AccountMeta::new_readonly(f.app, false),
+         AccountMeta::new_readonly(clock_sysvar_pk(), false),
          AccountMeta::new(f.delegate, true),
          AccountMeta::new(f.owner, true),
          AccountMeta::new(owner_source, false),
@@ -204,10 +210,10 @@ fn app_ix_fails_after_expiry() {
    let merged_app = merge_accounts(&app_accounts, &f.after_deposit);
    let r = f.mollusk.process_and_validate_instruction(
       &vault_ix,
-      &with_loader_accounts(&merged_app),
+      &with_clock_and_loaders(&f.mollusk, &merged_app),
       &[Check::err(custom_vault_err(Error::ExpiredDelegate))],
    );
-   log_cu("delegate_expiry::app_ix_fails_after_expiry", &r);
+   log_cu_bench("delegate_expiry::app_ix_fails_after_expiry", &r);
 }
 
 #[test]
@@ -232,7 +238,7 @@ fn cpi_entry_fails_after_expiry() {
          AccountMeta::new_readonly(f.mint_pk, false),
          AccountMeta::new_readonly(f.tok, false),
          AccountMeta::new_readonly(solana_instructions_sysvar::ID, false),
-         AccountMeta::new_readonly(f.sys_pk, false),
+         AccountMeta::new_readonly(clock_sysvar_pk(), false),
       ],
    );
    let cpi_user = vec![
@@ -245,16 +251,15 @@ fn cpi_entry_fails_after_expiry() {
       (dest_ata, token_account(&f.mint_pk, &dest_owner, 0)),
       (f.mint_pk, mint_account(f.owner, 0)),
       (f.tok, token::keyed_account().1),
-      (f.sys_pk, system_program_meta().1),
    ];
    let cpi_merged = merge_accounts(&cpi_user, &f.after_deposit);
-   let cpi_accounts = with_ix_sysvar_and_loaders(&cpi_ix, &cpi_merged);
+   let cpi_accounts = with_ix_sysvar_clock_and_loaders(&cpi_ix, &f.mollusk, &cpi_merged);
    let r = f.mollusk.process_and_validate_instruction(
       &cpi_ix,
       &cpi_accounts,
       &[Check::err(custom_vault_err(Error::ExpiredDelegate))],
    );
-   log_cu("delegate_expiry::cpi_entry_fails_after_expiry", &r);
+   log_cu_bench("delegate_expiry::cpi_entry_fails_after_expiry", &r);
 }
 
 #[test]
@@ -279,7 +284,7 @@ fn cpi_entry_ok_before_expiry() {
          AccountMeta::new_readonly(f.mint_pk, false),
          AccountMeta::new_readonly(f.tok, false),
          AccountMeta::new_readonly(solana_instructions_sysvar::ID, false),
-         AccountMeta::new_readonly(f.sys_pk, false),
+         AccountMeta::new_readonly(clock_sysvar_pk(), false),
       ],
    );
    let cpi_user = vec![
@@ -292,14 +297,13 @@ fn cpi_entry_ok_before_expiry() {
       (dest_ata, token_account(&f.mint_pk, &dest_owner, 0)),
       (f.mint_pk, mint_account(f.owner, 0)),
       (f.tok, token::keyed_account().1),
-      (f.sys_pk, system_program_meta().1),
    ];
    let cpi_merged = merge_accounts(&cpi_user, &f.after_deposit);
-   let cpi_accounts = with_ix_sysvar_and_loaders(&cpi_ix, &cpi_merged);
+   let cpi_accounts = with_ix_sysvar_clock_and_loaders(&cpi_ix, &f.mollusk, &cpi_merged);
    let r_cpi = f
       .mollusk
       .process_and_validate_instruction(&cpi_ix, &cpi_accounts, &[Check::success()]);
-   log_cu("delegate_expiry::cpi_entry_ok_before_expiry", &r_cpi);
+   log_cu_bench("delegate_expiry::cpi_entry_ok_before_expiry", &r_cpi);
 }
 
 #[test]
@@ -318,7 +322,7 @@ fn cpi_entry_native_fails_after_expiry() {
          AccountMeta::new_readonly(f.app, false),
          AccountMeta::new(lamports_dest, false),
          AccountMeta::new_readonly(solana_instructions_sysvar::ID, false),
-         AccountMeta::new_readonly(f.sys_pk, false),
+         AccountMeta::new_readonly(clock_sysvar_pk(), false),
       ],
    );
    let native_user = vec![
@@ -327,7 +331,6 @@ fn cpi_entry_native_fails_after_expiry() {
       (f.pda, Account::default()),
       (f.app, Account::default()),
       (lamports_dest, Account::default()),
-      (f.sys_pk, f.sys_acct),
    ];
    let mut native_merged = merge_accounts(&native_user, &f.after_deposit);
    let rent = f.mollusk.sysvars.rent.minimum_balance(app_specific_delegated_vaults::state::UserVaultAccount::LEN);
@@ -336,11 +339,11 @@ fn cpi_entry_native_fails_after_expiry() {
          a.lamports = rent + 300_000;
       }
    }
-   let native_accounts = with_ix_sysvar_and_loaders(&native_ix, &native_merged);
+   let native_accounts = with_ix_sysvar_clock_and_loaders(&native_ix, &f.mollusk, &native_merged);
    let r = f.mollusk.process_and_validate_instruction(
       &native_ix,
       &native_accounts,
       &[Check::err(custom_vault_err(Error::ExpiredDelegate))],
    );
-   log_cu("delegate_expiry::cpi_entry_native_fails_after_expiry", &r);
+   log_cu_bench("delegate_expiry::cpi_entry_native_fails_after_expiry", &r);
 }

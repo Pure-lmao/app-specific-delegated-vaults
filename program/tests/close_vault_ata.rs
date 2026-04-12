@@ -1,7 +1,8 @@
 use crate::common::{
    associated_token_address, custom_vault_err, decode_user_vault, derive_user_vault, fresh_mollusk, ix_close_vault_ata,
-   ix_create, ix_deposit, ix_withdraw, log_cu, merge_accounts, mint_account, signer_account, system_program_meta,
-   test_program_id, token_account, token_program_id, vault_program_id,
+   ix_create, ix_deposit, ix_withdraw, log_cu_bench, log_cu_setup, merge_accounts, mint_account, rent_sysvar_account,
+   rent_sysvar_pk, signer_account, system_program_meta, test_program_id, token_account, token_program_id,
+   vault_program_id,
 };
 use mollusk_svm::result::Check;
 use mollusk_svm_programs_token::{associated_token, token};
@@ -32,6 +33,7 @@ fn vault_with_empty_ata() -> (
    let source_acct = token_account(&mint_pk, &owner, 5_000_000);
    let vault_ata = associated_token_address(&pda, &mint_pk);
    let (sys_pk, sys_acct) = system_program_meta();
+   let (rent_pk, rent_acct) = rent_sysvar_account(&mollusk);
    let tok = token_program_id();
    let ata = associated_token::ID;
 
@@ -40,6 +42,7 @@ fn vault_with_empty_ata() -> (
       (pda, Account::default()),
       (app, Account::default()),
       (delegate, Account::default()),
+      (rent_pk, rent_acct),
       (sys_pk, sys_acct.clone()),
    ];
    let create_ix = Instruction::new_with_bytes(
@@ -50,6 +53,7 @@ fn vault_with_empty_ata() -> (
          AccountMeta::new(pda, false),
          AccountMeta::new_readonly(app, false),
          AccountMeta::new_readonly(delegate, false),
+         AccountMeta::new_readonly(rent_sysvar_pk(), false),
          AccountMeta::new_readonly(sys_pk, false),
       ],
    );
@@ -142,7 +146,7 @@ fn close_vault_ata_success() {
       ],
    );
    let r3 = mollusk.process_and_validate_instruction(&ix, &merged, &[Check::success()]);
-   log_cu("close_vault_ata::close_vault_ata_success", &r3);
+   log_cu_bench("close_vault_ata::close_vault_ata_success", &r3);
    let ata_after = decode_user_vault(&r3.get_account(&pda).unwrap().data)
       .unwrap()
       .ata_count;
@@ -166,11 +170,13 @@ fn close_vault_ata_fails_nonempty() {
       let (sys_pk, sys_acct) = system_program_meta();
       let tok = token_program_id();
       let ata = associated_token::ID;
+      let (rent_pk, rent_acct) = rent_sysvar_account(&m);
       let create_accounts = vec![
          (owner, signer_account(2_000_000_000)),
          (pda, Account::default()),
          (app, Account::default()),
          (delegate, Account::default()),
+         (rent_pk, rent_acct),
          (sys_pk, sys_acct.clone()),
       ];
       let create_ix = Instruction::new_with_bytes(
@@ -181,11 +187,12 @@ fn close_vault_ata_fails_nonempty() {
             AccountMeta::new(pda, false),
             AccountMeta::new_readonly(app, false),
             AccountMeta::new_readonly(delegate, false),
+            AccountMeta::new_readonly(rent_sysvar_pk(), false),
             AccountMeta::new_readonly(sys_pk, false),
          ],
       );
       let r0 = m.process_and_validate_instruction(&create_ix, &create_accounts, &[Check::success()]);
-      log_cu("close_vault_ata::close_vault_ata_fails_nonempty:create", &r0);
+      log_cu_setup("close_vault_ata::close_vault_ata_fails_nonempty:create", &r0);
       let deposit_accounts = vec![
          (owner, signer_account(2_000_000_000)),
          (pda, Account::default()),
@@ -214,7 +221,7 @@ fn close_vault_ata_fails_nonempty() {
          ],
       );
       let r1 = m.process_and_validate_instruction(&dep_ix, &merged, &[Check::success()]);
-      log_cu("close_vault_ata::close_vault_ata_fails_nonempty:deposit", &r1);
+      log_cu_setup("close_vault_ata::close_vault_ata_fails_nonempty:deposit", &r1);
       (m, r1, owner, app, pda, vault_ata, mint_pk, tok, sys_pk)
    };
 
@@ -247,7 +254,7 @@ fn close_vault_ata_fails_nonempty() {
       &merged,
       &[Check::err(custom_vault_err(Error::UserVaultAtaNotEmpty))],
    );
-   log_cu("close_vault_ata::close_vault_ata_fails_nonempty:close_ata", &r_close);
+   log_cu_bench("close_vault_ata::close_vault_ata_fails_nonempty:close_ata", &r_close);
 }
 
 #[test]
@@ -261,11 +268,13 @@ fn close_vault_ata_fails_ata_count_zero() {
    let vault_ata = associated_token_address(&pda, &mint_pk);
    let tok = token_program_id();
    let (sys_pk, sys_acct) = system_program_meta();
+   let (rent_pk, rent_acct) = rent_sysvar_account(&mollusk);
    let create_accounts = vec![
       (owner, signer_account(2_000_000_000)),
       (pda, Account::default()),
       (app, Account::default()),
       (delegate, Account::default()),
+      (rent_pk, rent_acct),
       (sys_pk, sys_acct),
    ];
    let create_ix = Instruction::new_with_bytes(
@@ -276,11 +285,12 @@ fn close_vault_ata_fails_ata_count_zero() {
          AccountMeta::new(pda, false),
          AccountMeta::new_readonly(app, false),
          AccountMeta::new_readonly(delegate, false),
+         AccountMeta::new_readonly(rent_sysvar_pk(), false),
          AccountMeta::new_readonly(sys_pk, false),
       ],
    );
    let r0 = mollusk.process_and_validate_instruction(&create_ix, &create_accounts, &[Check::success()]);
-   log_cu("close_vault_ata::close_vault_ata_fails_ata_count_zero:create", &r0);
+   log_cu_setup("close_vault_ata::close_vault_ata_fails_ata_count_zero:create", &r0);
    let rent_dest = Pubkey::new_unique();
    let merged = merge_accounts(
       &[
@@ -312,5 +322,5 @@ fn close_vault_ata_fails_ata_count_zero() {
       &merged,
       &[Check::err(custom_vault_err(Error::UserVaultAtaCountZero))],
    );
-   log_cu("close_vault_ata::close_vault_ata_fails_ata_count_zero:close_ata", &r);
+   log_cu_bench("close_vault_ata::close_vault_ata_fails_ata_count_zero:close_ata", &r);
 }

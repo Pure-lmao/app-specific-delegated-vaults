@@ -1,7 +1,9 @@
 use crate::common::{
-   custom_vault_err, decode_user_vault, derive_user_vault, fresh_mollusk, ix_create, log_cu, merge_accounts,
-   signer_account, system_program_meta, test_program_id, token_program_id, vault_program_id,
+   custom_vault_err, decode_user_vault, derive_user_vault, fresh_mollusk, ix_create, log_cu_bench, log_cu_setup,
+   merge_accounts, rent_sysvar_account, rent_sysvar_pk, signer_account, system_program_meta, test_program_id,
+   token_program_id, vault_program_id,
 };
+use mollusk_svm::Mollusk;
 use mollusk_svm::result::Check;
 use solana_account::Account;
 use solana_instruction::{AccountMeta, Instruction};
@@ -10,17 +12,19 @@ use solana_pubkey::Pubkey;
 use app_specific_delegated_vaults::error::Error;
 use app_specific_delegated_vaults::state::UserVaultAccount;
 
-fn base_create_accounts() -> (Pubkey, Pubkey, Pubkey, Pubkey, Pubkey, Vec<(Pubkey, Account)>) {
+fn base_create_accounts(mollusk: &Mollusk) -> (Pubkey, Pubkey, Pubkey, Pubkey, Pubkey, Vec<(Pubkey, Account)>) {
    let owner = Pubkey::new_unique();
    let app = test_program_id();
    let delegate = Pubkey::new_unique();
    let (pda, _) = derive_user_vault(&owner, &app);
    let (sys_pk, sys_acct) = system_program_meta();
+   let (rent_pk, rent_acct) = rent_sysvar_account(mollusk);
    let accounts = vec![
       (owner, signer_account(1_000_000_000)),
       (pda, Account::default()),
       (app, Account::default()),
       (delegate, Account::default()),
+      (rent_pk, rent_acct),
       (sys_pk, sys_acct),
    ];
    (owner, app, delegate, pda, sys_pk, accounts)
@@ -29,7 +33,7 @@ fn base_create_accounts() -> (Pubkey, Pubkey, Pubkey, Pubkey, Pubkey, Vec<(Pubke
 #[test]
 fn create_success_with_max_delegate_expires() {
    let mollusk = fresh_mollusk();
-   let (owner, app, delegate, pda, sys_pk, accounts) = base_create_accounts();
+   let (owner, app, delegate, pda, sys_pk, accounts) = base_create_accounts(&mollusk);
    let ix = Instruction::new_with_bytes(
       vault_program_id(),
       &ix_create(u32::MAX),
@@ -38,6 +42,7 @@ fn create_success_with_max_delegate_expires() {
          AccountMeta::new(pda, false),
          AccountMeta::new_readonly(app, false),
          AccountMeta::new_readonly(delegate, false),
+         AccountMeta::new_readonly(rent_sysvar_pk(), false),
          AccountMeta::new_readonly(sys_pk, false),
       ],
    );
@@ -50,7 +55,7 @@ fn create_success_with_max_delegate_expires() {
          .build(),
    ];
    let r = mollusk.process_and_validate_instruction(&ix, &accounts, &checks);
-   log_cu("create_user_vault::create_success_with_max_delegate_expires", &r);
+   log_cu_bench("create_user_vault::create_success_with_max_delegate_expires", &r);
    let data = r.get_account(&pda).expect("pda").data.clone();
    let v = decode_user_vault(&data).expect("decode");
    assert_eq!(v.owner, owner);
@@ -63,7 +68,7 @@ fn create_success_with_max_delegate_expires() {
 #[test]
 fn create_success_with_future_expiry() {
    let mollusk = fresh_mollusk();
-   let (owner, app, delegate, pda, sys_pk, accounts) = base_create_accounts();
+   let (owner, app, delegate, pda, sys_pk, accounts) = base_create_accounts(&mollusk);
    let t: u32 = 4_000_000_000;
    let ix = Instruction::new_with_bytes(
       vault_program_id(),
@@ -73,11 +78,12 @@ fn create_success_with_future_expiry() {
          AccountMeta::new(pda, false),
          AccountMeta::new_readonly(app, false),
          AccountMeta::new_readonly(delegate, false),
+         AccountMeta::new_readonly(rent_sysvar_pk(), false),
          AccountMeta::new_readonly(sys_pk, false),
       ],
    );
    let r = mollusk.process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
-   log_cu("create_user_vault::create_success_with_future_expiry", &r);
+   log_cu_bench("create_user_vault::create_success_with_future_expiry", &r);
    let data = r.get_account(&pda).expect("pda").data.clone();
    let v = decode_user_vault(&data).expect("decode");
    assert_eq!(v.delegate_expires, t);
@@ -86,7 +92,7 @@ fn create_success_with_future_expiry() {
 #[test]
 fn create_fails_pda_mismatch() {
    let mollusk = fresh_mollusk();
-   let (owner, app, delegate, _pda, sys_pk, mut accounts) = base_create_accounts();
+   let (owner, app, delegate, _pda, sys_pk, mut accounts) = base_create_accounts(&mollusk);
    let wrong_pda = Pubkey::new_unique();
    accounts[1].0 = wrong_pda;
    let ix = Instruction::new_with_bytes(
@@ -97,6 +103,7 @@ fn create_fails_pda_mismatch() {
          AccountMeta::new(wrong_pda, false),
          AccountMeta::new_readonly(app, false),
          AccountMeta::new_readonly(delegate, false),
+         AccountMeta::new_readonly(rent_sysvar_pk(), false),
          AccountMeta::new_readonly(sys_pk, false),
       ],
    );
@@ -105,13 +112,13 @@ fn create_fails_pda_mismatch() {
       &accounts,
       &[Check::err(custom_vault_err(Error::UserVaultPdaMismatch))],
    );
-   log_cu("create_user_vault::create_fails_pda_mismatch", &r);
+   log_cu_bench("create_user_vault::create_fails_pda_mismatch", &r);
 }
 
 #[test]
 fn create_fails_owner_not_signer() {
    let mollusk = fresh_mollusk();
-   let (owner, app, delegate, pda, sys_pk, accounts) = base_create_accounts();
+   let (owner, app, delegate, pda, sys_pk, accounts) = base_create_accounts(&mollusk);
    let ix = Instruction::new_with_bytes(
       vault_program_id(),
       &ix_create(0),
@@ -120,6 +127,7 @@ fn create_fails_owner_not_signer() {
          AccountMeta::new(pda, false),
          AccountMeta::new_readonly(app, false),
          AccountMeta::new_readonly(delegate, false),
+         AccountMeta::new_readonly(rent_sysvar_pk(), false),
          AccountMeta::new_readonly(sys_pk, false),
       ],
    );
@@ -128,13 +136,13 @@ fn create_fails_owner_not_signer() {
       &accounts,
       &[Check::err(ProgramError::Custom(Error::NotSigner as u32))],
    );
-   log_cu("create_user_vault::create_fails_owner_not_signer", &r);
+   log_cu_bench("create_user_vault::create_fails_owner_not_signer", &r);
 }
 
 #[test]
 fn create_fails_already_initialized() {
    let mollusk = fresh_mollusk();
-   let (owner, app, delegate, pda, sys_pk, accounts) = base_create_accounts();
+   let (owner, app, delegate, pda, sys_pk, accounts) = base_create_accounts(&mollusk);
    let ix = Instruction::new_with_bytes(
       vault_program_id(),
       &ix_create(0),
@@ -143,26 +151,27 @@ fn create_fails_already_initialized() {
          AccountMeta::new(pda, false),
          AccountMeta::new_readonly(app, false),
          AccountMeta::new_readonly(delegate, false),
+         AccountMeta::new_readonly(rent_sysvar_pk(), false),
          AccountMeta::new_readonly(sys_pk, false),
       ],
    );
    let r_first = mollusk.process_and_validate_instruction(&ix, &accounts, &[Check::success()]);
-   log_cu("create_user_vault::create_fails_already_initialized:first_create", &r_first);
+   log_cu_setup("create_user_vault::create_fails_already_initialized:first_create", &r_first);
    let accounts_after = merge_accounts(&accounts, &r_first);
    let r2 = mollusk.process_and_validate_instruction(
       &ix,
       &accounts_after,
       &[Check::err(custom_vault_err(Error::UserVaultAlreadyExists))],
    );
-   log_cu("create_user_vault::create_fails_already_initialized:second_create", &r2);
+   log_cu_bench("create_user_vault::create_fails_already_initialized:second_create", &r2);
 }
 
 #[test]
 fn create_fails_wrong_system_program() {
    let mollusk = fresh_mollusk();
-   let (owner, app, delegate, pda, _sys_pk, mut accounts) = base_create_accounts();
+   let (owner, app, delegate, pda, _sys_pk, mut accounts) = base_create_accounts(&mollusk);
    let fake_sys = token_program_id();
-   accounts[4].0 = fake_sys;
+   accounts[5].0 = fake_sys;
    let ix = Instruction::new_with_bytes(
       vault_program_id(),
       &ix_create(0),
@@ -171,6 +180,7 @@ fn create_fails_wrong_system_program() {
          AccountMeta::new(pda, false),
          AccountMeta::new_readonly(app, false),
          AccountMeta::new_readonly(delegate, false),
+         AccountMeta::new_readonly(rent_sysvar_pk(), false),
          AccountMeta::new_readonly(fake_sys, false),
       ],
    );
@@ -179,5 +189,5 @@ fn create_fails_wrong_system_program() {
       &accounts,
       &[Check::err(custom_vault_err(Error::InvalidSystemProgram))],
    );
-   log_cu("create_user_vault::create_fails_wrong_system_program", &r);
+   log_cu_bench("create_user_vault::create_fails_wrong_system_program", &r);
 }

@@ -1,4 +1,4 @@
-//! CPI → vault **`CpiEntryNative`** (`7`). Mirrors `deposit_via_cpi` layout: `vault_program` then the 7 vault accounts (instructions sysvar, then system program).
+//! CPI → vault **`CpiEntryNative`** (`7`). `vault_program` then the 7 vault accounts (instructions + clock sysvars).
 
 use crate::helpers::parse_u64_instruction_data;
 
@@ -11,7 +11,7 @@ use pinocchio::{
 };
 use pinocchio_log::log;
 
-pub fn process(_program_id: &pinocchio::Address, accounts: &[AccountView], data: &[u8]) -> ProgramResult {
+pub fn process(_program_id: &pinocchio::Address, accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
    let amount_native = parse_u64_instruction_data(data).map_err(|e| {
       log!("cpi_entry_native_via_vault: bad amount");
       e

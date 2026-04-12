@@ -1,7 +1,7 @@
 use crate::common::{
    custom_vault_err, decode_user_vault, derive_user_vault, fresh_mollusk, ix_close_user_vault, ix_create, ix_deposit,
-   log_cu, merge_accounts, mint_account, signer_account, system_program_meta, test_program_id, token_account,
-   token_program_id, vault_program_id,
+   log_cu_bench, log_cu_setup, merge_accounts, mint_account, rent_sysvar_account, rent_sysvar_pk, signer_account,
+   system_program_meta, test_program_id, token_account, token_program_id, vault_program_id,
 };
 use mollusk_svm::result::Check;
 use mollusk_svm_programs_token::{associated_token, token};
@@ -26,11 +26,13 @@ fn close_user_vault_success() {
    let tok = token_program_id();
    let ata = associated_token::ID;
 
+   let (rent_pk, rent_acct) = rent_sysvar_account(&mollusk);
    let create_accounts = vec![
       (owner, signer_account(2_000_000_000)),
       (pda, Account::default()),
       (app, Account::default()),
       (delegate, Account::default()),
+      (rent_pk, rent_acct),
       (sys_pk, sys_acct.clone()),
    ];
    let create_ix = Instruction::new_with_bytes(
@@ -41,11 +43,12 @@ fn close_user_vault_success() {
          AccountMeta::new(pda, false),
          AccountMeta::new_readonly(app, false),
          AccountMeta::new_readonly(delegate, false),
+         AccountMeta::new_readonly(rent_sysvar_pk(), false),
          AccountMeta::new_readonly(sys_pk, false),
       ],
    );
    let r0 = mollusk.process_and_validate_instruction(&create_ix, &create_accounts, &[Check::success()]);
-   log_cu("close_user_vault::close_user_vault_success:create", &r0);
+   log_cu_setup("close_user_vault::close_user_vault_success:create", &r0);
 
    let deposit_accounts = vec![
       (owner, signer_account(2_000_000_000)),
@@ -75,7 +78,7 @@ fn close_user_vault_success() {
       ],
    );
    let r1 = mollusk.process_and_validate_instruction(&dep_ix, &merged_d, &[Check::success()]);
-   log_cu("close_user_vault::close_user_vault_success:deposit", &r1);
+   log_cu_setup("close_user_vault::close_user_vault_success:deposit", &r1);
 
    let withdraw_pre = vec![
       (owner, signer_account(2_000_000_000)),
@@ -101,7 +104,7 @@ fn close_user_vault_success() {
       ],
    );
    let r2 = mollusk.process_and_validate_instruction(&w_ix, &merged_w, &[Check::success()]);
-   log_cu("close_user_vault::close_user_vault_success:withdraw", &r2);
+   log_cu_setup("close_user_vault::close_user_vault_success:withdraw", &r2);
 
    let rent_dest = Pubkey::new_unique();
    let close_ata_pre = vec![
@@ -128,7 +131,7 @@ fn close_user_vault_success() {
       ],
    );
    let r3 = mollusk.process_and_validate_instruction(&close_ata_ix, &merged_c, &[Check::success()]);
-   log_cu("close_user_vault::close_user_vault_success:close_ata", &r3);
+   log_cu_setup("close_user_vault::close_user_vault_success:close_ata", &r3);
    assert_eq!(decode_user_vault(&r3.get_account(&pda).unwrap().data).unwrap().ata_count, 0);
 
    let close_vault_pre = vec![
@@ -147,7 +150,7 @@ fn close_user_vault_success() {
       ],
    );
    let r4 = mollusk.process_and_validate_instruction(&close_ix, &merged_cv, &[Check::success()]);
-   log_cu("close_user_vault::close_user_vault_success:close_vault", &r4);
+   log_cu_bench("close_user_vault::close_user_vault_success:close_vault", &r4);
 }
 
 #[test]
@@ -166,11 +169,13 @@ fn close_user_vault_fails_open_atas() {
    let tok = token_program_id();
    let ata = associated_token::ID;
 
+   let (rent_pk, rent_acct) = rent_sysvar_account(&mollusk);
    let create_accounts = vec![
       (owner, signer_account(2_000_000_000)),
       (pda, Account::default()),
       (app, Account::default()),
       (delegate, Account::default()),
+      (rent_pk, rent_acct),
       (sys_pk, sys_acct.clone()),
    ];
    let create_ix = Instruction::new_with_bytes(
@@ -181,11 +186,12 @@ fn close_user_vault_fails_open_atas() {
          AccountMeta::new(pda, false),
          AccountMeta::new_readonly(app, false),
          AccountMeta::new_readonly(delegate, false),
+         AccountMeta::new_readonly(rent_sysvar_pk(), false),
          AccountMeta::new_readonly(sys_pk, false),
       ],
    );
    let r0 = mollusk.process_and_validate_instruction(&create_ix, &create_accounts, &[Check::success()]);
-   log_cu("close_user_vault::close_user_vault_fails_open_atas:create", &r0);
+   log_cu_setup("close_user_vault::close_user_vault_fails_open_atas:create", &r0);
 
    let deposit_accounts = vec![
       (owner, signer_account(2_000_000_000)),
@@ -215,7 +221,7 @@ fn close_user_vault_fails_open_atas() {
       ],
    );
    let r1 = mollusk.process_and_validate_instruction(&dep_ix, &merged_d, &[Check::success()]);
-   log_cu("close_user_vault::close_user_vault_fails_open_atas:deposit", &r1);
+   log_cu_setup("close_user_vault::close_user_vault_fails_open_atas:deposit", &r1);
 
    let close_vault_pre = vec![
       (owner, signer_account(2_000_000_000)),
@@ -237,5 +243,5 @@ fn close_user_vault_fails_open_atas() {
       &merged_cv,
       &[Check::err(custom_vault_err(Error::UserVaultHasOpenAtas))],
    );
-   log_cu("close_user_vault::close_user_vault_fails_open_atas:close_vault", &r_cv);
+   log_cu_bench("close_user_vault::close_user_vault_fails_open_atas:close_vault", &r_cv);
 }

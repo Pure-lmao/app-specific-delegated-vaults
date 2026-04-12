@@ -2,7 +2,7 @@ use pinocchio::Address;
 
 pub const USER_VAULT_SEED: &[u8] = b"vault";
 
-pub const USER_VAULT_DISCRIMINATOR: u8 = 0;
+pub const USER_VAULT_DISCRIMINATOR: u8 = 1;
 
 pub const ID: Address = Address::new_from_array([
    0x8c, 0x4a, 0x75, 0xd5, 0xd6, 0x63, 0xca, 0x33, 0x5e, 0x25, 0xdb, 0xba, 0x06, 0x9f, 0x22, 0x80,
