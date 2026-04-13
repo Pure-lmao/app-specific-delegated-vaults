@@ -150,6 +150,46 @@ pub fn fresh_mollusk() -> Mollusk {
    mollusk
 }
 
+/// Fixed keys for bench tests so PDA bumps (and therefore CU) are deterministic across runs.
+/// `Pubkey::new_unique()` produces random keys each run → `find_program_address` iterates a
+/// different number of SHA-256 hashes → CU jitter.
+pub fn bench_owner() -> Pubkey {
+   Pubkey::new_from_array([
+      1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+   ])
+}
+pub fn bench_delegate() -> Pubkey {
+   Pubkey::new_from_array([
+      2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+   ])
+}
+pub fn bench_mint() -> Pubkey {
+   Pubkey::new_from_array([
+      3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+   ])
+}
+pub fn bench_rent_dest() -> Pubkey {
+   Pubkey::new_from_array([
+      4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+   ])
+}
+pub fn bench_lamports_dest() -> Pubkey {
+   Pubkey::new_from_array([
+      5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+   ])
+}
+pub fn bench_dest_owner() -> Pubkey {
+   Pubkey::new_from_array([
+      6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+   ])
+}
+
 pub fn derive_user_vault(owner: &Pubkey, app: &Pubkey) -> (Pubkey, u8) {
    Pubkey::find_program_address(
       &[app_specific_delegated_vaults::constants::USER_VAULT_SEED, owner.as_ref(), app.as_ref()],

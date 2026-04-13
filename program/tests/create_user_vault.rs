@@ -1,7 +1,7 @@
 use crate::common::{
-   custom_vault_err, decode_user_vault, derive_user_vault, fresh_mollusk, ix_create, log_cu_bench, log_cu_setup,
-   merge_accounts, rent_sysvar_account, rent_sysvar_pk, signer_account, system_program_meta, test_program_id,
-   token_program_id, vault_program_id,
+   bench_delegate, bench_owner, custom_vault_err, decode_user_vault, derive_user_vault, fresh_mollusk, ix_create,
+   log_cu_bench, log_cu_setup, merge_accounts, rent_sysvar_account, rent_sysvar_pk, signer_account,
+   system_program_meta, test_program_id, token_program_id, vault_program_id,
 };
 use mollusk_svm::Mollusk;
 use mollusk_svm::result::Check;
@@ -13,9 +13,9 @@ use app_specific_delegated_vaults::error::Error;
 use app_specific_delegated_vaults::state::UserVaultAccount;
 
 fn base_create_accounts(mollusk: &Mollusk) -> (Pubkey, Pubkey, Pubkey, Pubkey, Pubkey, Vec<(Pubkey, Account)>) {
-   let owner = Pubkey::new_unique();
+   let owner = bench_owner();
    let app = test_program_id();
-   let delegate = Pubkey::new_unique();
+   let delegate = bench_delegate();
    let (pda, _) = derive_user_vault(&owner, &app);
    let (sys_pk, sys_acct) = system_program_meta();
    let (rent_pk, rent_acct) = rent_sysvar_account(mollusk);
@@ -187,7 +187,7 @@ fn create_fails_wrong_system_program() {
    let r = mollusk.process_and_validate_instruction(
       &ix,
       &accounts,
-      &[Check::err(custom_vault_err(Error::InvalidSystemProgram))],
+      &[Check::err(ProgramError::IncorrectProgramId)],
    );
    log_cu_bench("create_user_vault::create_fails_wrong_system_program", &r);
 }

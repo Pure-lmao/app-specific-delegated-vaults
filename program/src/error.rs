@@ -9,9 +9,7 @@ pub enum Error {
    InvalidAta = 2,
    MintMismatch = 3,
    ArithmeticOverflow = 4,
-   InvalidSystemProgram = 5,
-   InvalidTokenProgram = 6,
-   InvalidAssociatedTokenProgram = 7,
+   // 5..=7 reserved (removed InvalidSystemProgram, InvalidTokenProgram, InvalidAssociatedTokenProgram)
    UserVaultAlreadyExists = 8,
    UserVaultNotFound = 9,
    UserVaultOwnerMismatch = 10,

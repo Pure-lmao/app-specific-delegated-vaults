@@ -17,8 +17,8 @@ bpf-entrypoint = []
 test-sbf = []
 
 [dependencies]
-# `alloc` enables `solana-instruction-view/slice-cpi` → `invoke_signed_with_slice` (heap CPI buffer).
-pinocchio = { version = "0.11.1", default-features = true, features = ["cpi", "alloc"] }
+# `default-features = false` omits Pinocchio `alloc` / `slice-cpi`; `app_ix` uses `invoke_signed_unchecked` + split stack frames (≤64 accounts).
+pinocchio = { version = "0.11.1", default-features = false, features = ["cpi", "copy", "sha2"] }
 pinocchio-associated-token-account = "0.4.0"
 pinocchio-system = "0.6.0"
 pinocchio-token = "0.6.0"

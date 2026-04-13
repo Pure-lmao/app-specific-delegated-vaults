@@ -1,8 +1,8 @@
 use crate::common::{
-   associated_token_address, custom_vault_err, decode_user_vault, derive_user_vault, fresh_mollusk, ix_close_vault_ata,
-   ix_create, ix_deposit, ix_withdraw, log_cu_bench, log_cu_setup, merge_accounts, mint_account, rent_sysvar_account,
-   rent_sysvar_pk, signer_account, system_program_meta, test_program_id, token_account, token_program_id,
-   vault_program_id,
+   associated_token_address, bench_delegate, bench_mint, bench_owner, bench_rent_dest, custom_vault_err,
+   decode_user_vault, derive_user_vault, fresh_mollusk, ix_close_vault_ata, ix_create, ix_deposit, ix_withdraw,
+   log_cu_bench, log_cu_setup, merge_accounts, mint_account, rent_sysvar_account, rent_sysvar_pk, signer_account,
+   system_program_meta, test_program_id, token_account, token_program_id, vault_program_id,
 };
 use mollusk_svm::result::Check;
 use mollusk_svm_programs_token::{associated_token, token};
@@ -23,11 +23,11 @@ fn vault_with_empty_ata() -> (
    Pubkey,
 ) {
    let mollusk = fresh_mollusk();
-   let owner = Pubkey::new_unique();
+   let owner = bench_owner();
    let app = test_program_id();
-   let delegate = Pubkey::new_unique();
+   let delegate = bench_delegate();
    let (pda, _) = derive_user_vault(&owner, &app);
-   let mint_pk = Pubkey::new_unique();
+   let mint_pk = bench_mint();
    let mint_acct = mint_account(owner, 0);
    let source = associated_token_address(&owner, &mint_pk);
    let source_acct = token_account(&mint_pk, &owner, 5_000_000);
@@ -118,7 +118,7 @@ fn vault_with_empty_ata() -> (
 #[test]
 fn close_vault_ata_success() {
    let (mollusk, r2, owner, app, pda, vault_ata, mint_pk, tok, _sys) = vault_with_empty_ata();
-   let rent_dest = Pubkey::new_unique();
+   let rent_dest = bench_rent_dest();
    let close_pre = vec![
       (owner, signer_account(2_000_000_000)),
       (pda, Account::default()),

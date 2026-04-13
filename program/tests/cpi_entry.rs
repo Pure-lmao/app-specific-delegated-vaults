@@ -1,9 +1,10 @@
 use crate::common::{
-   associated_token_address, clock_sysvar_pk, custom_vault_err, derive_user_vault, fresh_mollusk, ix_create,
-   ix_cpi_entry, ix_deposit, ix_test_bench_noop_top, ix_test_cpi_entry_dual_via_vault, ix_test_deposit_via_cpi,
-   log_cu_bench, log_cu_bench_cpi_via_caller_split, merge_accounts, mint_account, rent_sysvar_account,
-   rent_sysvar_pk, signer_account, system_program_meta, test_program_id, token_account, token_program_id,
-   vault_program_id, with_ix_sysvar_and_loaders, with_ix_sysvar_clock_and_loaders,
+   associated_token_address, bench_delegate, bench_dest_owner, bench_lamports_dest, bench_mint, bench_owner,
+   clock_sysvar_pk, custom_vault_err, derive_user_vault, fresh_mollusk, ix_create, ix_cpi_entry, ix_deposit,
+   ix_test_bench_noop_top, ix_test_cpi_entry_dual_via_vault, ix_test_deposit_via_cpi, log_cu_bench,
+   log_cu_bench_cpi_via_caller_split, merge_accounts, mint_account, rent_sysvar_account, rent_sysvar_pk,
+   signer_account, system_program_meta, test_program_id, token_account, token_program_id, vault_program_id,
+   with_ix_sysvar_and_loaders, with_ix_sysvar_clock_and_loaders,
 };
 use mollusk_svm::result::Check;
 use mollusk_svm_programs_token::{associated_token, token};
@@ -27,11 +28,11 @@ fn funded_vault_for_cpi() -> (
    Pubkey,
 ) {
    let mollusk = fresh_mollusk();
-   let owner = Pubkey::new_unique();
+   let owner = bench_owner();
    let app = test_program_id();
-   let delegate = Pubkey::new_unique();
+   let delegate = bench_delegate();
    let (pda, _) = derive_user_vault(&owner, &app);
-   let mint_pk = Pubkey::new_unique();
+   let mint_pk = bench_mint();
    let mint_acct = mint_account(owner, 0);
    let source = associated_token_address(&owner, &mint_pk);
    let source_acct = token_account(&mint_pk, &owner, 5_000_000);
@@ -97,8 +98,8 @@ fn funded_vault_for_cpi() -> (
 #[test]
 fn cpi_entry_success_spl_only_via_test_program() {
    let (mollusk, r1, owner, app, delegate, pda, vault_ata, mint_pk, tok) = funded_vault_for_cpi();
-   let lamports_dest = Pubkey::new_unique();
-   let dest_owner = Pubkey::new_unique();
+   let lamports_dest = bench_lamports_dest();
+   let dest_owner = bench_dest_owner();
    let dest_ata = associated_token_address(&dest_owner, &mint_pk);
 
    let cpi_ix = Instruction::new_with_bytes(
@@ -159,8 +160,8 @@ fn cpi_entry_success_spl_only_via_test_program() {
 #[test]
 fn cpi_entry_success_native_and_spl_via_test_program() {
    let (mollusk, r1, owner, app, delegate, pda, vault_ata, mint_pk, tok) = funded_vault_for_cpi();
-   let lamports_dest = Pubkey::new_unique();
-   let dest_owner = Pubkey::new_unique();
+   let lamports_dest = bench_lamports_dest();
+   let dest_owner = bench_dest_owner();
    let dest_ata = associated_token_address(&dest_owner, &mint_pk);
 
    // Dual CPI payload (two u64s) via `test_program`; SPL leg only here — Mollusk flags

@@ -16,9 +16,9 @@ use crate::{
    constants::USER_VAULT_SEED,
    error::Error,
    helpers::{
-      assert_spl_token_program, assert_user_vault_is_owned_by_program_and_correct_length,
-      get_vault_ata_count, get_vault_bump, invoke_token_close_account,
-      require_signer, verify_token_account, verify_vault_owner_and_app_address,
+      assert_user_vault_is_owned_by_program_and_correct_length,
+      get_vault_ata_count, invoke_token_close_account,
+      read_token_account_balance_for_close, require_signer, verify_vault_owner_app_return_bump,
    },
 };
 use pinocchio::{
@@ -37,7 +37,7 @@ pub fn process(accounts: &mut [AccountView]) -> ProgramResult {
       app_address,
       user_vault_ata,
       destination,
-      mint,
+      _mint,
       token_program,
    ] = accounts else {
       log!("close_vault_ata: not enough account keys");
@@ -45,10 +45,9 @@ pub fn process(accounts: &mut [AccountView]) -> ProgramResult {
    };
 
    require_signer(owner)?;
-   assert_spl_token_program(token_program)?;
 
    assert_user_vault_is_owned_by_program_and_correct_length(user_vault_pda)?;
-   verify_vault_owner_and_app_address(user_vault_pda, owner.address(), app_address.address())?;
+   let vault_bump = verify_vault_owner_app_return_bump(user_vault_pda, owner.address(), app_address.address())?;
 
    let ata_count = get_vault_ata_count(user_vault_pda);
    if unlikely(ata_count == 0) {
@@ -56,18 +55,13 @@ pub fn process(accounts: &mut [AccountView]) -> ProgramResult {
       return Err(Error::UserVaultAtaCountZero.into());
    }
 
-   let balance = verify_token_account(
-      user_vault_ata,
-      token_program,
-      user_vault_pda.address(),
-      mint.address(),
-   )?;
+   let balance = read_token_account_balance_for_close(user_vault_ata, token_program)?;
    if unlikely(balance != 0) {
       log!("token account: balance not zero");
       return Err(Error::UserVaultAtaNotEmpty.into());
    }
 
-   let bump_seed = [get_vault_bump(user_vault_pda)];
+   let bump_seed = [vault_bump];
    let signer_seeds = [
       Seed::from(USER_VAULT_SEED),
       Seed::from(owner.address().as_ref()),

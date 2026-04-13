@@ -1,11 +1,12 @@
 use crate::common::{
-   associated_token_address, clock_sysvar_pk, custom_vault_err, derive_user_vault, fresh_mollusk, ix_app_ix, ix_create,
-   ix_deposit, log_cu_bench, log_cu_bench_app_ix_split, log_cu_setup, merge_accounts, mint_account, rent_sysvar_account,
-   rent_sysvar_pk, signer_account, system_program_meta, test_program_id, token_account, token_program_id, treasury_pda,
-   vault_program_id, with_clock_and_loaders,
+   associated_token_address, bench_delegate, bench_mint, bench_owner, clock_sysvar_pk, custom_vault_err,
+   derive_user_vault, fresh_mollusk, ix_app_ix, ix_create, ix_deposit, log_cu_bench, log_cu_bench_app_ix_split,
+   log_cu_setup, merge_accounts, mint_account, rent_sysvar_account, rent_sysvar_pk, signer_account,
+   system_program_meta, test_program_id, token_account, token_program_id, treasury_pda, vault_program_id,
+   with_clock_and_loaders,
 };
 use test_program::TestProgramInstruction;
-use mollusk_svm::result::Check;
+use mollusk_svm::{result::{Check, InstructionResult}, Mollusk};
 use mollusk_svm_programs_token::{associated_token, token};
 use solana_account::Account;
 use solana_instruction::{AccountMeta, Instruction};
@@ -21,14 +22,78 @@ fn inner_deposit_from_user(amount: u64) -> Vec<u8> {
    v
 }
 
+/// Create vault then `app_ix` into `test_program` with [`TestProgramInstruction::BenchNoopInner`] and `n_inner`
+/// extra readonly accounts (CPI metas after the five fixed keys).
+fn exec_app_ix_inner_bench_noop(mollusk: &Mollusk, n_inner: usize) -> InstructionResult {
+   assert!(n_inner <= 64, "bench capped at MAX_STATIC_CPI_ACCOUNTS");
+   let owner = bench_owner();
+   let app = test_program_id();
+   let delegate = bench_delegate();
+   let (pda, _) = derive_user_vault(&owner, &app);
+   let (sys_pk, sys_acct) = system_program_meta();
+   let (rent_pk, rent_acct) = rent_sysvar_account(mollusk);
+   let create_accounts = vec![
+      (owner, signer_account(2_000_000_000)),
+      (pda, Account::default()),
+      (app, Account::default()),
+      (delegate, Account::default()),
+      (rent_pk, rent_acct),
+      (sys_pk, sys_acct.clone()),
+   ];
+   let create_ix = Instruction::new_with_bytes(
+      vault_program_id(),
+      &ix_create(u32::MAX),
+      vec![
+         AccountMeta::new(owner, true),
+         AccountMeta::new(pda, false),
+         AccountMeta::new_readonly(app, false),
+         AccountMeta::new_readonly(delegate, false),
+         AccountMeta::new_readonly(rent_sysvar_pk(), false),
+         AccountMeta::new_readonly(sys_pk, false),
+      ],
+   );
+   let r0 = mollusk.process_and_validate_instruction(&create_ix, &create_accounts, &[Check::success()]);
+
+   let extras: Vec<Pubkey> = (0..n_inner).map(|_| Pubkey::new_unique()).collect();
+   let mut metas = vec![
+      AccountMeta::new(delegate, true),
+      AccountMeta::new(owner, true),
+      AccountMeta::new_readonly(pda, false),
+      AccountMeta::new_readonly(app, false),
+      AccountMeta::new_readonly(clock_sysvar_pk(), false),
+   ];
+   for k in &extras {
+      metas.push(AccountMeta::new_readonly(*k, false));
+   }
+
+   let vault_ix = Instruction::new_with_bytes(
+      vault_program_id(),
+      &ix_app_ix(&[TestProgramInstruction::BenchNoopInner as u8]),
+      metas,
+   );
+
+   let mut app_accounts = vec![
+      (delegate, signer_account(1_000_000_000)),
+      (owner, signer_account(1_000_000_000)),
+      (pda, Account::default()),
+      (app, Account::default()),
+   ];
+   for k in &extras {
+      app_accounts.push((*k, Account::default()));
+   }
+   let merged = merge_accounts(&app_accounts, &r0);
+   let with_clock = with_clock_and_loaders(mollusk, &merged);
+   mollusk.process_and_validate_instruction(&vault_ix, &with_clock, &[Check::success()])
+}
+
 #[test]
 fn app_ix_success_deposit_from_user() {
    let mollusk = fresh_mollusk();
-   let owner = Pubkey::new_unique();
+   let owner = bench_owner();
    let app = test_program_id();
-   let delegate = Pubkey::new_unique();
+   let delegate = bench_delegate();
    let (pda, _) = derive_user_vault(&owner, &app);
-   let mint_pk = Pubkey::new_unique();
+   let mint_pk = bench_mint();
    let mint_acct = mint_account(owner, 0);
    let owner_source = associated_token_address(&owner, &mint_pk);
    let owner_source_acct = token_account(&mint_pk, &owner, 2_000_000);
@@ -314,4 +379,25 @@ fn app_ix_fails_wrong_delegate() {
       &[Check::err(custom_vault_err(Error::InvalidUserVaultDelegate))],
    );
    log_cu_bench("app_ix::app_ix_fails_wrong_delegate:app_ix", &r);
+}
+
+#[test]
+fn app_ix_inner_bench_0_accounts() {
+   let mollusk = fresh_mollusk();
+   let r = exec_app_ix_inner_bench_noop(&mollusk, 0);
+   log_cu_bench("app_ix::app_ix_inner_bench_0_accounts", &r);
+}
+
+#[test]
+fn app_ix_inner_bench_1_account() {
+   let mollusk = fresh_mollusk();
+   let r = exec_app_ix_inner_bench_noop(&mollusk, 1);
+   log_cu_bench("app_ix::app_ix_inner_bench_1_account", &r);
+}
+
+#[test]
+fn app_ix_inner_bench_50_accounts() {
+   let mollusk = fresh_mollusk();
+   let r = exec_app_ix_inner_bench_noop(&mollusk, 50);
+   log_cu_bench("app_ix::app_ix_inner_bench_50_accounts", &r);
 }

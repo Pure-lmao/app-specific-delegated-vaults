@@ -17,15 +17,15 @@
 use crate::{
    error::Error,
    helpers::{
-      assert_associated_token_program, assert_spl_token_program, assert_system_program,
       assert_user_vault_is_owned_by_program_and_correct_length,
       get_vault_ata_count, invoke_token_transfer_checked_with_decimals,
-      mint_base_decimals, parse_u64_instruction_data, require_signer,
-      vault_ata_exists, verify_vault_owner_and_app_address,
+      parse_u64_instruction_data, read_mint_decimals, require_signer, vault_ata_exists,
+      verify_vault_owner_and_app_address,
    },
 };
-use pinocchio::{error::ProgramError, AccountView, ProgramResult, hint::unlikely};
+use pinocchio::{address::address_eq, error::ProgramError, AccountView, ProgramResult, hint::unlikely};
 use pinocchio_associated_token_account::instructions::Create;
+use pinocchio_associated_token_account::ID as ASSOCIATED_TOKEN_PROGRAM_ID;
 use pinocchio_log::log;
 
 #[inline(never)]
@@ -55,16 +55,18 @@ pub fn process(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
    };
 
    require_signer(owner)?;
-   assert_system_program(system_program)?;
-   assert_spl_token_program(token_program)?;
-   assert_associated_token_program(ata_program)?;
+
+   if unlikely(!address_eq(ata_program.address(), &ASSOCIATED_TOKEN_PROGRAM_ID)) {
+      log!("deposit_user_vault: associated token program account mismatch");
+      return Err(ProgramError::IncorrectProgramId);
+   }
 
    assert_user_vault_is_owned_by_program_and_correct_length(user_vault_pda)?;
    verify_vault_owner_and_app_address(user_vault_pda, owner.address(), app_address.address())?;
 
-   let decimals = mint_base_decimals(mint).map_err(|e| {
-      log!("deposit_user_vault: mint decimals read failed");
-      e
+   let decimals = read_mint_decimals(mint).map_err(|e| {
+      log!("deposit_user_vault: mint verification failed");
+      ProgramError::from(e)
    })?;
 
    let ata_exists = vault_ata_exists(user_vault_ata, token_program, user_vault_pda.address(), mint.address())?;

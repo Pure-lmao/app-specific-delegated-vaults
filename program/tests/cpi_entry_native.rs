@@ -1,8 +1,9 @@
 use crate::common::{
-   clock_sysvar_pk, custom_vault_err, derive_user_vault, fresh_mollusk, ix_cpi_entry_native, ix_create,
-   ix_test_bench_noop_top, ix_test_cpi_entry_native_via_vault, log_cu_bench, log_cu_bench_cpi_via_caller_split,
-   log_cu_setup, merge_accounts, rent_sysvar_account, rent_sysvar_pk, signer_account, system_program_meta,
-   test_program_id, vault_program_id, with_ix_sysvar_and_loaders, with_ix_sysvar_clock_and_loaders,
+   bench_delegate, bench_lamports_dest, bench_owner, clock_sysvar_pk, custom_vault_err, derive_user_vault,
+   fresh_mollusk, ix_cpi_entry_native, ix_create, ix_test_bench_noop_top, ix_test_cpi_entry_native_via_vault,
+   log_cu_bench, log_cu_bench_cpi_via_caller_split, log_cu_setup, merge_accounts, rent_sysvar_account, rent_sysvar_pk,
+   signer_account, system_program_meta, test_program_id, vault_program_id, with_ix_sysvar_and_loaders,
+   with_ix_sysvar_clock_and_loaders,
 };
 use mollusk_svm::result::Check;
 use solana_account::Account;
@@ -15,11 +16,11 @@ use app_specific_delegated_vaults::state::UserVaultAccount;
 #[test]
 fn cpi_entry_native_success() {
    let mollusk = fresh_mollusk();
-   let owner = Pubkey::new_unique();
+   let owner = bench_owner();
    let app = test_program_id();
-   let delegate = Pubkey::new_unique();
+   let delegate = bench_delegate();
    let (pda, _) = derive_user_vault(&owner, &app);
-   let lamports_dest = Pubkey::new_unique();
+   let lamports_dest = bench_lamports_dest();
    let (sys_pk, sys_acct) = system_program_meta();
    let (rent_pk, rent_acct) = rent_sysvar_account(&mollusk);
 

@@ -1,6 +1,7 @@
 use crate::common::{
-   derive_user_vault, fresh_mollusk, ix_create, ix_withdraw_native, log_cu_bench, merge_accounts, rent_sysvar_account,
-   rent_sysvar_pk, signer_account, system_program_meta, test_program_id, vault_program_id,
+   bench_delegate, bench_owner, derive_user_vault, fresh_mollusk, ix_create, ix_withdraw_native, log_cu_bench,
+   merge_accounts, rent_sysvar_account, rent_sysvar_pk, signer_account, system_program_meta, test_program_id,
+   vault_program_id,
 };
 use mollusk_svm::result::Check;
 use solana_account::Account;
@@ -19,9 +20,9 @@ fn create_vault_only() -> (
    Pubkey,
 ) {
    let mollusk = fresh_mollusk();
-   let owner = Pubkey::new_unique();
+   let owner = bench_owner();
    let app = test_program_id();
-   let delegate = Pubkey::new_unique();
+   let delegate = bench_delegate();
    let (pda, _) = derive_user_vault(&owner, &app);
    let (sys_pk, sys_acct) = system_program_meta();
    let (rent_pk, rent_acct) = rent_sysvar_account(&mollusk);

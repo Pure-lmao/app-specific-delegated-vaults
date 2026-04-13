@@ -1,13 +1,16 @@
 ﻿# Happy-path compute units only (Mollusk: one simulated instruction + all CPIs in that step).
 # Regenerate: .\scripts\generate-cu-report.ps1
-# Generated: 2026-04-12 23:59:12 +01:00
+# Generated: 2026-04-13 18:13:20 +01:00
 operation	compute_units
-create_user_vault	3107
-deposit_user_vault	16741
-withdraw_user_vault	1486
+create_user_vault	3061
+deposit_user_vault	16713
+withdraw_user_vault	1468
 withdraw_user_vault_native	170
-app_ix	21396
-cpi_entry	3824
+app_ix	25540
+app_ix_inner_0_accounts	1224
+app_ix_inner_1_account	1307
+app_ix_inner_50_accounts	3948
+cpi_entry	3804
 cpi_entry_native	1855
-close_vault_ata	1475
+close_vault_ata	1403
 close_user_vault	164

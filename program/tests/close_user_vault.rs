@@ -1,7 +1,8 @@
 use crate::common::{
-   custom_vault_err, decode_user_vault, derive_user_vault, fresh_mollusk, ix_close_user_vault, ix_create, ix_deposit,
-   log_cu_bench, log_cu_setup, merge_accounts, mint_account, rent_sysvar_account, rent_sysvar_pk, signer_account,
-   system_program_meta, test_program_id, token_account, token_program_id, vault_program_id,
+   bench_delegate, bench_mint, bench_owner, bench_rent_dest, custom_vault_err, decode_user_vault, derive_user_vault,
+   fresh_mollusk, ix_close_user_vault, ix_create, ix_deposit, log_cu_bench, log_cu_setup, merge_accounts, mint_account,
+   rent_sysvar_account, rent_sysvar_pk, signer_account, system_program_meta, test_program_id, token_account,
+   token_program_id, vault_program_id,
 };
 use mollusk_svm::result::Check;
 use mollusk_svm_programs_token::{associated_token, token};
@@ -13,11 +14,11 @@ use app_specific_delegated_vaults::error::Error;
 #[test]
 fn close_user_vault_success() {
    let mollusk = fresh_mollusk();
-   let owner = Pubkey::new_unique();
+   let owner = bench_owner();
    let app = test_program_id();
-   let delegate = Pubkey::new_unique();
+   let delegate = bench_delegate();
    let (pda, _) = derive_user_vault(&owner, &app);
-   let mint_pk = Pubkey::new_unique();
+   let mint_pk = bench_mint();
    let mint_acct = mint_account(owner, 0);
    let source = crate::common::associated_token_address(&owner, &mint_pk);
    let source_acct = token_account(&mint_pk, &owner, 5_000_000);
@@ -106,7 +107,7 @@ fn close_user_vault_success() {
    let r2 = mollusk.process_and_validate_instruction(&w_ix, &merged_w, &[Check::success()]);
    log_cu_setup("close_user_vault::close_user_vault_success:withdraw", &r2);
 
-   let rent_dest = Pubkey::new_unique();
+   let rent_dest = bench_rent_dest();
    let close_ata_pre = vec![
       (owner, signer_account(2_000_000_000)),
       (pda, Account::default()),

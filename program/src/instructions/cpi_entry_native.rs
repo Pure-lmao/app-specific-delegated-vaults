@@ -13,10 +13,9 @@
 //! Data: `[discriminator (u8), amount_native (u64)]`
 
 use crate::helpers::{
-   assert_user_vault_is_owned_by_program_and_correct_length, get_vault_delegate_expires,
-   parse_u64_instruction_data, require_delegate_not_expired, require_signer,
+   assert_user_vault_is_owned_by_program_and_correct_length, parse_u64_instruction_data, require_signer,
    require_top_level_instruction_is_app, transfer_lamports_from_user_vault_pda,
-   verify_vault_delegate, verify_vault_owner_and_app_address,
+   verify_delegate_authority_return_bump,
 };
 use pinocchio::{
    error::ProgramError,
@@ -54,11 +53,12 @@ pub fn process(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
    require_signer(delegate)?;
 
    assert_user_vault_is_owned_by_program_and_correct_length(user_vault_pda)?;
-   verify_vault_owner_and_app_address(user_vault_pda, owner.address(), app_address.address())?;
-   verify_vault_delegate(user_vault_pda, delegate.address())?;
-   require_delegate_not_expired(
-      get_vault_delegate_expires(user_vault_pda),
-      clock_sysvar
+   verify_delegate_authority_return_bump(
+      user_vault_pda,
+      owner.address(),
+      app_address.address(),
+      delegate.address(),
+      clock_sysvar,
    )?;
 
    transfer_lamports_from_user_vault_pda(user_vault_pda, lamports_dest, amount_native).map_err(|e| {

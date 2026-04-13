@@ -361,7 +361,7 @@ fn deposit_fails_mint_metadata_too_short() {
    let r_dep = mollusk.process_and_validate_instruction(
       &dep_ix,
       &merged,
-      &[Check::err(ProgramError::InvalidAccountData)],
+      &[Check::err(custom_vault_err(Error::InvalidAta))],
    );
    log_cu_bench("error_paths::deposit_fails_mint_metadata_too_short:deposit", &r_dep);
 }
@@ -542,7 +542,7 @@ fn deposit_fails_invalid_token_program() {
    let r_dep = mollusk.process_and_validate_instruction(
       &dep_ix,
       &merged,
-      &[Check::err(custom_vault_err(Error::InvalidTokenProgram))],
+      &[Check::err(ProgramError::InvalidSeeds)],
    );
    log_cu_bench("error_paths::deposit_fails_invalid_token_program:deposit", &r_dep);
 }
@@ -613,7 +613,7 @@ fn deposit_fails_invalid_associated_token_program() {
    let r_dep = mollusk.process_and_validate_instruction(
       &dep_ix,
       &merged,
-      &[Check::err(custom_vault_err(Error::InvalidAssociatedTokenProgram))],
+      &[Check::err(ProgramError::IncorrectProgramId)],
    );
    log_cu_bench("error_paths::deposit_fails_invalid_associated_token_program:deposit", &r_dep);
 }

@@ -20,12 +20,11 @@
 use crate::{
    constants::USER_VAULT_SEED,
    helpers::{
-      assert_spl_token_program, assert_user_vault_is_owned_by_program_and_correct_length,
-      get_vault_bump, get_vault_delegate_expires,
-      invoke_token_transfer_checked_with_decimals, mint_base_decimals,
-      parse_two_u64_instruction_data, require_delegate_not_expired, require_signer,
+      assert_user_vault_is_owned_by_program_and_correct_length,
+      invoke_token_transfer_checked_with_decimals, read_mint_decimals,
+      parse_two_u64_instruction_data, require_signer,
       require_top_level_instruction_is_app, transfer_lamports_from_user_vault_pda,
-      verify_vault_delegate, verify_vault_owner_and_app_address,
+      verify_delegate_authority_return_bump,
    },
 };
 use pinocchio::{
@@ -69,11 +68,12 @@ pub fn process(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
    require_signer(delegate)?;
 
    assert_user_vault_is_owned_by_program_and_correct_length(user_vault_pda)?;
-   verify_vault_owner_and_app_address(user_vault_pda, owner.address(), app_address.address())?;
-   verify_vault_delegate(user_vault_pda, delegate.address())?;
-   require_delegate_not_expired(
-      get_vault_delegate_expires(user_vault_pda),
-      clock_sysvar
+   let vault_bump = verify_delegate_authority_return_bump(
+      user_vault_pda,
+      owner.address(),
+      app_address.address(),
+      delegate.address(),
+      clock_sysvar,
    )?;
 
    if amount_native > 0 {
@@ -84,13 +84,12 @@ pub fn process(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
    }
 
    if amount > 0 {
-      assert_spl_token_program(token_program)?;
-      let decimals = mint_base_decimals(mint).map_err(|e| {
-         log!("cpi_entry: mint decimals read failed");
-         e
+      let decimals = read_mint_decimals(mint).map_err(|e| {
+         log!("cpi_entry: mint verification failed");
+         ProgramError::from(e)
       })?;
 
-      let bump_seed = [get_vault_bump(user_vault_pda)];
+      let bump_seed = [vault_bump];
       let signer_seeds = [
          Seed::from(USER_VAULT_SEED),
          Seed::from(owner.address().as_ref()),

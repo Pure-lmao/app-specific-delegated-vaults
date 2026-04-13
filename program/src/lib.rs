@@ -30,7 +30,7 @@ mod bpf_entrypoint {
    use super::process_instruction as route_instruction;
 
    pinocchio::program_entrypoint!(process_instruction);
-   pinocchio::default_allocator!();
+   pinocchio::no_allocator!();
    pinocchio::nostd_panic_handler!();
 
    fn process_instruction(

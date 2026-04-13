@@ -1,7 +1,8 @@
 use crate::common::{
-   associated_token_address, decode_user_vault, derive_user_vault, fresh_mollusk, ix_create, ix_deposit, log_cu_bench,
-   log_cu_setup, merge_accounts, mint_account, rent_sysvar_account, rent_sysvar_pk, signer_account,
-   system_program_meta, test_program_id, token_account, token_program_id, vault_program_id,
+   associated_token_address, bench_delegate, bench_mint, bench_owner, decode_user_vault, derive_user_vault,
+   fresh_mollusk, ix_create, ix_deposit, log_cu_bench, log_cu_setup, merge_accounts, mint_account,
+   rent_sysvar_account, rent_sysvar_pk, signer_account, system_program_meta, test_program_id, token_account,
+   token_program_id, vault_program_id,
 };
 use mollusk_svm::result::Check;
 use mollusk_svm_programs_token::{associated_token, token};
@@ -15,11 +16,11 @@ use app_specific_delegated_vaults::error::Error;
 #[test]
 fn deposit_success_first_creates_ata() {
    let mollusk = fresh_mollusk();
-   let owner = Pubkey::new_unique();
+   let owner = bench_owner();
    let app = test_program_id();
-   let delegate = Pubkey::new_unique();
+   let delegate = bench_delegate();
    let (pda, _) = derive_user_vault(&owner, &app);
-   let mint_pk = Pubkey::new_unique();
+   let mint_pk = bench_mint();
    let mint_acct = mint_account(owner, 0);
    let source = associated_token_address(&owner, &mint_pk);
    let source_acct = token_account(&mint_pk, &owner, 1_000_000);

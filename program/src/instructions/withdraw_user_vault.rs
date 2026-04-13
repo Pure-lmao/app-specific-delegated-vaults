@@ -1,5 +1,5 @@
-//! Owner-signed SPL withdrawal: transfer from the vault ATA to a destination ATA (same mint). The
-//! destination must be an ATA owned by `owner` (enforced before CPI).
+//! Owner-signed SPL withdrawal: transfer from the vault ATA to a destination ATA (same mint).
+//! The destination must be an SPL token account for `mint` owned by `owner` (SPL does not enforce this on CPI).
 //!
 //! Accounts (7):
 //! 0. `owner` (writable signer)
@@ -15,7 +15,9 @@
 use crate::{
    constants::USER_VAULT_SEED,
    helpers::{
-      assert_spl_token_program, assert_user_vault_is_owned_by_program_and_correct_length, get_vault_bump, invoke_token_transfer_checked_with_decimals, mint_base_decimals, parse_u64_instruction_data, require_signer, verify_token_account, verify_vault_owner_and_app_address,
+      assert_user_vault_is_owned_by_program_and_correct_length,
+      invoke_token_transfer_checked_with_decimals, parse_u64_instruction_data, read_mint_decimals,
+      require_signer, verify_token_account_owner_mint, verify_vault_owner_app_return_bump,
    },
 };
 use pinocchio::{
@@ -51,16 +53,14 @@ pub fn process(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
    };
 
    require_signer(owner)?;
-   assert_spl_token_program(token_program)?;
 
    assert_user_vault_is_owned_by_program_and_correct_length(user_vault_pda)?;
-   verify_token_account(dest_ata, token_program, owner.address(), mint.address())?;
-   verify_vault_owner_and_app_address(user_vault_pda, owner.address(), app_address.address())?;
-   let vault_bump = get_vault_bump(user_vault_pda);
+   verify_token_account_owner_mint(dest_ata, token_program, owner.address(), mint.address())?;
+   let vault_bump = verify_vault_owner_app_return_bump(user_vault_pda, owner.address(), app_address.address())?;
 
-   let decimals = mint_base_decimals(mint).map_err(|e| {
-      log!("withdraw_user_vault: mint decimals read failed");
-      e
+   let decimals = read_mint_decimals(mint).map_err(|e| {
+      log!("withdraw_user_vault: mint verification failed");
+      ProgramError::from(e)
    })?;
 
    let bump_seed = [vault_bump];
