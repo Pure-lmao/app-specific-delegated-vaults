@@ -17,6 +17,8 @@ pub const SYSTEM_PROGRAM_ID: Pubkey = pubkey!("11111111111111111111111111111111"
 pub const SYSVAR_INSTRUCTIONS_ID: Pubkey = pubkey!("Sysvar1nstructions1111111111111111111111111");
 /// Clock sysvar — account index 10 on `CpiEntry`, 6 on `CpiEntryNative`.
 pub const SYSVAR_CLOCK_ID: Pubkey = pubkey!("SysvarC1ock11111111111111111111111111111111");
+/// Rent sysvar — account index 4 on `CreateUserVault`.
+pub const SYSVAR_RENT_ID: Pubkey = pubkey!("SysvarRent111111111111111111111111111111111");
 pub const ASSOCIATED_TOKEN_PROGRAM_ID: Pubkey = pubkey!("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 pub const SPL_TOKEN_PROGRAM_ID: Pubkey = pubkey!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 pub const SPL_TOKEN_2022_PROGRAM_ID: Pubkey = pubkey!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");

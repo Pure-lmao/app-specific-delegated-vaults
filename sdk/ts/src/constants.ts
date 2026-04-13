@@ -20,3 +20,5 @@ export const ASSOCIATED_TOKEN_PROGRAM_ADDRESS = address('ATokenGPvbdGVxr1b2hvZbs
 export const SYSVAR_INSTRUCTIONS_ADDRESS = address('Sysvar1nstructions1111111111111111111111111');
 /** Clock sysvar — last account on `cpiEntry` / `cpiEntryNative`. */
 export const SYSVAR_CLOCK_ADDRESS = address('SysvarC1ock11111111111111111111111111111111');
+/** Rent sysvar — account index 4 on `createUserVault` (read lamports for rent-exempt minimum). */
+export const SYSVAR_RENT_ADDRESS = address('SysvarRent111111111111111111111111111111111');

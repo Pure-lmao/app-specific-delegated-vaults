@@ -5,7 +5,7 @@ use solana_pubkey::Pubkey;
 
 use crate::constants::{
    ASSOCIATED_TOKEN_PROGRAM_ID, DEFAULT_VAULT_PROGRAM_ID, SPL_TOKEN_PROGRAM_ID, SYSTEM_PROGRAM_ID,
-   SYSVAR_CLOCK_ID, SYSVAR_INSTRUCTIONS_ID,
+   SYSVAR_CLOCK_ID, SYSVAR_INSTRUCTIONS_ID, SYSVAR_RENT_ID,
 };
 use crate::error::VaultSdkError;
 
@@ -41,7 +41,7 @@ fn require_cpi_entry_amounts(amount_native: u64, amount: u64) -> Result<(), Vaul
    }
 }
 
-/// `CreateUserVault` — 5 accounts: owner, user_vault_pda, app, delegate, system. Data: discriminator + `delegate_expires` u32 LE (Unix seconds; `u32::MAX` = no practical expiry).
+/// `CreateUserVault` — 6 accounts: owner, user_vault_pda, app, delegate, rent_sysvar, system. Data: discriminator + `delegate_expires` u32 LE (Unix seconds; `u32::MAX` = no practical expiry).
 pub fn create_user_vault_ix(
    program_id: &Pubkey,
    owner: &Pubkey,
@@ -62,6 +62,7 @@ pub fn create_user_vault_ix(
          AccountMeta::new(*user_vault_pda, false),
          AccountMeta::new_readonly(*app_address, false),
          AccountMeta::new_readonly(*delegate, false),
+         AccountMeta::new_readonly(SYSVAR_RENT_ID, false),
          AccountMeta::new_readonly(system, false),
       ],
       data,
@@ -191,13 +192,15 @@ pub struct AppIxFixedAccounts<'a> {
    pub app_address: &'a Pubkey,
 }
 
-/// `AppIx` — 4 fixed accounts, then accounts for the inner app instruction. `inner_instruction_data` is passed through to the CPI as-is (no length prefix).
+/// `AppIx` — 5 fixed accounts (delegate, owner, vault PDA, app, clock sysvar), then inner app instruction metas. `inner_instruction_data` is passed through to the CPI as-is (no length prefix).
 pub fn app_ix_ix(
    program_id: &Pubkey,
    fixed: AppIxFixedAccounts,
    inner_accounts: Vec<AccountMeta>,
    inner_instruction_data: &[u8],
+   clock_sysvar: Option<&Pubkey>,
 ) -> Instruction {
+   let clock = clock_sysvar.copied().unwrap_or(SYSVAR_CLOCK_ID);
    let mut data = Vec::with_capacity(1 + inner_instruction_data.len());
    data.push(VaultInstructionKind::AppIx as u8);
    data.extend_from_slice(inner_instruction_data);
@@ -206,6 +209,7 @@ pub fn app_ix_ix(
       AccountMeta::new_readonly(*fixed.owner, false),
       AccountMeta::new_readonly(*fixed.user_vault_pda, false),
       AccountMeta::new_readonly(*fixed.app_address, false),
+      AccountMeta::new_readonly(clock, false),
    ];
    accounts.extend(inner_accounts);
    Instruction {

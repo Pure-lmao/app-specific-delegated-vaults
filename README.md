@@ -27,15 +27,19 @@ Token `approve` / `delegate` exists, but it is scoped to a single token account 
 User connects, you generate a throwaway keypair, set it as delegate with a 1-hour window, and your frontend/backend uses it to act on their behalf until it expires.
 
 ```typescript
+import { address, generateKeyPair, getAddressFromPublicKey } from '@solana/kit';
 import {
    VAULT_PROGRAM_ADDRESS,
+   deriveUserVaultAtaAddress,
    deriveUserVaultPda,
    getCreateUserVaultInstruction,
    getDepositUserVaultInstruction,
    getUpdateUserVaultDelegateInstruction,
+   SPL_TOKEN_PROGRAM_ADDRESS,
 } from '@vault/sdk';
 
 const APP_ADDRESS = address('YourProgram1111111111111111111111111111111');
+// `ownerAddress` / `userTokenAccount` / `mintAddress`: `Address` values from the wallet and mint config.
 
 // 1. Derive the user's vault PDA for your app
 const [userVaultPda] = await deriveUserVaultPda(
@@ -56,7 +60,10 @@ const createIx = getCreateUserVaultInstruction({
    data: { delegateExpires: oneHourFromNow },
 });
 
-// 3. User deposits tokens (owner signs)
+// 3. User deposits tokens (owner signs) — classic SPL; use `TOKEN_2022_PROGRAM_ADDRESS` for Token-2022
+const vaultAta = await deriveUserVaultAtaAddress(
+   userVaultPda, mintAddress, SPL_TOKEN_PROGRAM_ADDRESS,
+);
 const depositIx = getDepositUserVaultInstruction({
    accounts: {
       owner: ownerAddress,
@@ -65,7 +72,7 @@ const depositIx = getDepositUserVaultInstruction({
       appAddress: APP_ADDRESS,
       sourceAta: userTokenAccount,
       mint: mintAddress,
-      tokenProgram: TOKEN_PROGRAM_ADDRESS,
+      tokenProgram: SPL_TOKEN_PROGRAM_ADDRESS,
    },
    data: { amount: 1_000_000n },
 });
@@ -138,7 +145,7 @@ Single-byte discriminator as the first byte of instruction data.
 
 ```
 UserVaultAccount (104 bytes, #[repr(C)] on-chain):
-  discriminator    u8       (always 0)
+  discriminator    u8       (always 1 — `USER_VAULT_DISCRIMINATOR`, matches RPC memcmp filters in the SDK)
   bump             u8       (PDA bump seed)
   ata_count        u16      (open vault ATAs)
   delegate_expires u32      (Unix seconds; use u32::MAX for no practical expiry)
@@ -156,6 +163,14 @@ Custom errors: see `program/src/error.rs`.
 - **Owner withdrawals** enforce the destination ATA is owned by the owner.
 - **`delegate_expires`** uses the on-chain `Clock` sysvar. Delegate actions require `unix_timestamp <= delegate_expires` (as `u32`). Set `delegate_expires` to `u32::MAX` for no practical expiry.
 
+## Demo
+
+The [`demo/`](demo/) app is a small Vite + TypeScript page that connects a wallet, queries vault accounts via the TypeScript SDK, and runs the main owner instructions (create, deposit, withdraw, delegate update, close ATA, close vault). It resolves `@vault/sdk` to `sdk/ts` through the Vite alias, so you can try UI changes against the local SDK without publishing a package.
+
+```bash
+cd demo && npm install && npm run dev
+```
+
 ---
 
 ## Development
@@ -171,6 +186,7 @@ Custom errors: see `program/src/error.rs`.
 | `test_program/` | Companion program for CPI integration tests. |
 | `sdk/rust/` | `vault-sdk` crate -- instruction builders, PDA derivation, account parsing. |
 | `sdk/ts/` | `@vault/sdk` package (`@solana/kit`) -- TypeScript mirrors of the Rust SDK. |
+| `demo/` | Browser demo (`npm run dev` in that folder) -- wallet + vault flows against devnet or other clusters. |
 | `program/tests/` | Mollusk integration tests. |
 | `testing/` | Node scripts and experiments. |
 

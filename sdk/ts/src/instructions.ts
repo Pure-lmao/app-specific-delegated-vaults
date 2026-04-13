@@ -6,6 +6,7 @@ import {
    SYSTEM_PROGRAM_ADDRESS,
    SYSVAR_CLOCK_ADDRESS,
    SYSVAR_INSTRUCTIONS_ADDRESS,
+   SYSVAR_RENT_ADDRESS,
    USER_VAULT_SEED,
    VAULT_PROGRAM_ADDRESS,
 } from './constants';
@@ -30,6 +31,7 @@ import type {
 /**
  * `cpi_entry` / `cpi_entry_native` are invoked via CPI from the registered app program (instructions + clock sysvars).
  * Builders match `cpi_entry.rs` / `cpi_entry_native.rs`.
+ * `app_ix` matches `app_ix.rs`: five fixed accounts (ending with clock sysvar), then inner metas.
  */
 
 const textEncoder = new TextEncoder();
@@ -65,18 +67,30 @@ export async function deriveUserVaultAtaAddress(
    return ata;
 }
 
+/** SPL ATA for a wallet owner (same PDA layout as the vault ATA, but authority = `owner`). */
+export async function deriveAtaAddress(
+   owner: Address,
+   mint: Address,
+   tokenProgram: Address,
+): Promise<Address> {
+   const addrEnc = getAddressEncoder();
+   const [ata] = await getProgramDerivedAddress({
+      programAddress: ASSOCIATED_TOKEN_PROGRAM_ADDRESS,
+      seeds: [addrEnc.encode(owner), addrEnc.encode(tokenProgram), addrEnc.encode(mint)],
+   });
+   return ata;
+}
+
 export function getCreateUserVaultInstruction(input: {
    accounts: Readonly<{
       owner: Address;
       userVaultPda: Address;
       appAddress: Address;
       delegate: Address;
-      systemProgram?: Address;
    }>;
    data: CreateUserVaultInput;
 }): Instruction {
    assertU32DelegateExpires(input.data.delegateExpires, 'createUserVault delegateExpires');
-   const systemProgram = input.accounts.systemProgram ?? SYSTEM_PROGRAM_ADDRESS;
    return {
       programAddress: VAULT_PROGRAM_ADDRESS,
       accounts: [
@@ -84,7 +98,8 @@ export function getCreateUserVaultInstruction(input: {
          { address: input.accounts.userVaultPda, role: AccountRole.WRITABLE },
          { address: input.accounts.appAddress, role: AccountRole.READONLY },
          { address: input.accounts.delegate, role: AccountRole.READONLY },
-         { address: systemProgram, role: AccountRole.READONLY },
+         { address: SYSVAR_RENT_ADDRESS, role: AccountRole.READONLY },
+         { address: SYSTEM_PROGRAM_ADDRESS, role: AccountRole.READONLY },
       ] as const satisfies readonly AccountMeta[],
       data: encodeVaultIx({
          kind: 'createUserVault',
@@ -101,15 +116,11 @@ export function getDepositUserVaultInstruction(input: {
       appAddress: Address;
       sourceAta: Address;
       mint: Address;
-      systemProgram?: Address;
       tokenProgram: Address;
-      associatedTokenProgram?: Address;
    }>;
    data: DepositUserVaultInput;
 }): Instruction {
    assertU64Amount(input.data.amount, 'deposit amount');
-   const systemProgram = input.accounts.systemProgram ?? SYSTEM_PROGRAM_ADDRESS;
-   const ataProgram = input.accounts.associatedTokenProgram ?? ASSOCIATED_TOKEN_PROGRAM_ADDRESS;
    return {
       programAddress: VAULT_PROGRAM_ADDRESS,
       accounts: [
@@ -119,9 +130,9 @@ export function getDepositUserVaultInstruction(input: {
          { address: input.accounts.appAddress, role: AccountRole.READONLY },
          { address: input.accounts.sourceAta, role: AccountRole.WRITABLE },
          { address: input.accounts.mint, role: AccountRole.READONLY },
-         { address: systemProgram, role: AccountRole.READONLY },
+         { address: SYSTEM_PROGRAM_ADDRESS, role: AccountRole.READONLY },
          { address: input.accounts.tokenProgram, role: AccountRole.READONLY },
-         { address: ataProgram, role: AccountRole.READONLY },
+         { address: ASSOCIATED_TOKEN_PROGRAM_ADDRESS, role: AccountRole.READONLY },
       ] as const satisfies readonly AccountMeta[],
       data: encodeVaultIx({ kind: 'depositUserVault', amount: input.data.amount }),
    };
@@ -220,6 +231,7 @@ export function getAppIxInstruction(input: {
       { address: input.accounts.owner, role: AccountRole.READONLY },
       { address: input.accounts.userVaultPda, role: AccountRole.READONLY },
       { address: input.accounts.appAddress, role: AccountRole.READONLY },
+      { address: SYSVAR_CLOCK_ADDRESS, role: AccountRole.READONLY },
    ];
    return {
       programAddress: VAULT_PROGRAM_ADDRESS,
@@ -246,16 +258,12 @@ export function getCpiEntryInstruction(input: {
       destAta: Address;
       mint: Address;
       tokenProgram: Address;
-      instructionsSysvar?: Address;
-      clockSysvar?: Address;
    }>;
    data: CpiEntryInput;
 }): Instruction {
    assertCpiEntryAmounts(input.data.amountNative, input.data.amount);
    const wNative = input.data.amountNative > 0n;
    const wSpl = input.data.amount > 0n;
-   const sysvar = input.accounts.instructionsSysvar ?? SYSVAR_INSTRUCTIONS_ADDRESS;
-   const clock = input.accounts.clockSysvar ?? SYSVAR_CLOCK_ADDRESS;
    return {
       programAddress: VAULT_PROGRAM_ADDRESS,
       accounts: [
@@ -280,8 +288,8 @@ export function getCpiEntryInstruction(input: {
          },
          { address: input.accounts.mint, role: AccountRole.READONLY },
          { address: input.accounts.tokenProgram, role: AccountRole.READONLY },
-         { address: sysvar, role: AccountRole.READONLY },
-         { address: clock, role: AccountRole.READONLY },
+         { address: SYSVAR_INSTRUCTIONS_ADDRESS, role: AccountRole.READONLY },
+         { address: SYSVAR_CLOCK_ADDRESS, role: AccountRole.READONLY },
       ] as const satisfies readonly AccountMeta[],
       data: encodeVaultIx({
          kind: 'cpiEntry',
@@ -299,14 +307,10 @@ export function getCpiEntryNativeInstruction(input: {
       userVaultPda: Address;
       appAddress: Address;
       lamportsDest: Address;
-      instructionsSysvar?: Address;
-      clockSysvar?: Address;
    }>;
    data: CpiEntryNativeInput;
 }): Instruction {
    assertU64Amount(input.data.amountNative, 'cpiEntryNative amountNative');
-   const sysvar = input.accounts.instructionsSysvar ?? SYSVAR_INSTRUCTIONS_ADDRESS;
-   const clock = input.accounts.clockSysvar ?? SYSVAR_CLOCK_ADDRESS;
    return {
       programAddress: VAULT_PROGRAM_ADDRESS,
       accounts: [
@@ -315,8 +319,8 @@ export function getCpiEntryNativeInstruction(input: {
          { address: input.accounts.userVaultPda, role: AccountRole.WRITABLE },
          { address: input.accounts.appAddress, role: AccountRole.READONLY },
          { address: input.accounts.lamportsDest, role: AccountRole.WRITABLE },
-         { address: sysvar, role: AccountRole.READONLY },
-         { address: clock, role: AccountRole.READONLY },
+         { address: SYSVAR_INSTRUCTIONS_ADDRESS, role: AccountRole.READONLY },
+         { address: SYSVAR_CLOCK_ADDRESS, role: AccountRole.READONLY },
       ] as const satisfies readonly AccountMeta[],
       data: encodeVaultIx({
          kind: 'cpiEntryNative',

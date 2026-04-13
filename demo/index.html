@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Delegated vaults demo</title>
+    <style>
+      :root {
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        line-height: 1.45;
+        color: #0f172a;
+        background: #e2e8f0;
+        --card-bg: #fff;
+        --border: #cbd5e1;
+        --accent: #2563eb;
+        --muted: #64748b;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+      }
+      .page {
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+      }
+      header {
+        background: #0f172a;
+        color: #f1f5f9;
+        padding: 0.65rem 1.25rem;
+        border-bottom: 1px solid #334155;
+      }
+      .header-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem 0.75rem;
+        min-width: 0;
+      }
+      .header-bar h1 {
+        margin: 0;
+        font-size: 1.05rem;
+        font-weight: 600;
+        flex: 0 1 auto;
+        min-width: 0;
+        line-height: 1.3;
+      }
+      .header-cluster {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        font-size: 0.85rem;
+        margin: 0;
+        flex-shrink: 0;
+      }
+      .header-bar .header-cluster {
+        margin-left: auto;
+      }
+      .header-cluster select {
+        padding: 0.35rem 0.5rem;
+        border-radius: 6px;
+        border: 1px solid #475569;
+        background: #1e293b;
+        color: #f8fafc;
+      }
+      .header-wallet-status {
+        flex: 1 1 8rem;
+        min-width: 0;
+        font-size: 0.8rem;
+        color: #94a3b8;
+        line-height: 1.35rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #btn-wallet-action {
+        flex-shrink: 0;
+      }
+      #btn-wallet-action[data-mode="disconnect"] {
+        border-color: #94a3b8;
+        background: transparent;
+      }
+      .wallet-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 200;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+      }
+      .wallet-modal[hidden] {
+        display: none;
+      }
+      .wallet-modal-scrim {
+        position: absolute;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.55);
+        border: none;
+        padding: 0;
+        cursor: pointer;
+      }
+      .wallet-modal-panel {
+        position: relative;
+        z-index: 1;
+        width: min(22rem, 100%);
+        max-height: min(70vh, 28rem);
+        overflow: auto;
+        background: #1e293b;
+        color: #f1f5f9;
+        border: 1px solid #475569;
+        border-radius: 10px;
+        padding: 1rem 1.1rem;
+        box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
+      }
+      .wallet-modal-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin-bottom: 0.35rem;
+      }
+      .wallet-modal-header h2 {
+        margin: 0;
+        font-size: 1rem;
+        font-weight: 600;
+      }
+      .wallet-modal-close {
+        flex-shrink: 0;
+        width: 2rem;
+        height: 2rem;
+        padding: 0;
+        line-height: 1;
+        font-size: 1.35rem;
+        border-radius: 6px;
+        border: 1px solid #64748b;
+        background: transparent;
+        color: #e2e8f0;
+        cursor: pointer;
+      }
+      .wallet-modal-close:hover {
+        background: #334155;
+      }
+      .wallet-modal-hint {
+        margin: 0 0 0.85rem;
+        font-size: 0.8rem;
+        color: #94a3b8;
+        line-height: 1.4;
+      }
+      .wallet-modal-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+      }
+      .wallet-modal-list button {
+        width: 100%;
+        text-align: left;
+        padding: 0.55rem 0.75rem;
+        border-radius: 8px;
+        border: 1px solid #475569;
+        background: #334155;
+        color: #f8fafc;
+        cursor: pointer;
+        font-size: 0.9rem;
+      }
+      .wallet-modal-list button:hover:not(:disabled) {
+        background: #475569;
+      }
+      .wallet-modal-list button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      header button {
+        padding: 0.45rem 0.85rem;
+        border-radius: 6px;
+        border: 1px solid #64748b;
+        background: #334155;
+        color: #f8fafc;
+        cursor: pointer;
+        font-size: 0.85rem;
+      }
+      header button:hover:not(:disabled) {
+        background: #475569;
+      }
+      header button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .body {
+        display: flex;
+        flex: 1;
+        align-items: stretch;
+        min-height: 0;
+      }
+      .main-col {
+        flex: 1;
+        min-width: 0;
+        padding: 1rem 1.25rem 2rem;
+        overflow-y: auto;
+      }
+      .log-col {
+        width: min(380px, 42vw);
+        flex-shrink: 0;
+        background: #1e293b;
+        color: #e2e8f0;
+        border-left: 1px solid #334155;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+      .log-col h2 {
+        margin: 0;
+        padding: 0.65rem 0.85rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #94a3b8;
+        border-bottom: 1px solid #334155;
+      }
+      #log {
+        flex: 1;
+        margin: 0;
+        padding: 0.65rem 0.85rem;
+        font-size: 0.72rem;
+        font-family: ui-monospace, monospace;
+        white-space: pre-wrap;
+        word-break: break-word;
+        overflow-y: auto;
+      }
+      section.card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 1rem 1.1rem;
+        margin-bottom: 1rem;
+        width: 100%;
+        max-width: 100%;
+        box-shadow: 0 1px 2px rgb(15 23 42 / 0.06);
+      }
+      section.card h2 {
+        margin: 0 0 0.75rem;
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: #1e293b;
+        padding-bottom: 0.35rem;
+        border-bottom: 1px solid #e2e8f0;
+      }
+      section.card p.hint {
+        margin: 0 0 0.75rem;
+        font-size: 0.8rem;
+        color: var(--muted);
+      }
+      label.field {
+        display: block;
+        margin-bottom: 0.65rem;
+        font-size: 0.82rem;
+      }
+      label.field span {
+        display: block;
+        margin-bottom: 0.2rem;
+        color: #475569;
+        font-weight: 500;
+      }
+      input[type="text"],
+      input[type="number"],
+      select {
+        width: 100%;
+        max-width: 100%;
+        padding: 0.45rem 0.55rem;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        font-size: 0.9rem;
+      }
+      input[type="number"] {
+        max-width: 10rem;
+      }
+      .amount-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        align-items: flex-end;
+        margin-bottom: 0.75rem;
+      }
+      .amount-row label.field {
+        margin-bottom: 0;
+        flex: 1 1 8rem;
+      }
+      .amount-row label.field.decimals-field {
+        flex: 0 0 5.5rem;
+        max-width: 5.5rem;
+      }
+      section.card button.action {
+        margin-top: 0.35rem;
+        padding: 0.5rem 1rem;
+        border-radius: 6px;
+        border: none;
+        background: var(--accent);
+        color: #fff;
+        font-weight: 600;
+        font-size: 0.88rem;
+        cursor: pointer;
+      }
+      section.card button.action:hover:not(:disabled) {
+        background: #1d4ed8;
+      }
+      section.card button.action:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      .preset-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+        align-items: center;
+        margin: 0.35rem 0 0.5rem;
+      }
+      .preset-row button {
+        padding: 0.35rem 0.65rem;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+        background: #f8fafc;
+        cursor: pointer;
+        font-size: 0.82rem;
+      }
+      .preset-row button:hover {
+        background: #e2e8f0;
+      }
+      .preset-row button.active {
+        border-color: var(--accent);
+        background: #eff6ff;
+        color: #1d4ed8;
+        font-weight: 600;
+      }
+      section.card .preset-row > button.action {
+        margin-top: 0;
+      }
+      .delegate-expiry-caption {
+        font-size: 0.8rem;
+        color: var(--muted);
+        margin-left: 0.25rem;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .read-results {
+        margin-top: 0.75rem;
+        font-size: 0.8rem;
+        overflow-x: auto;
+      }
+      .read-results .empty {
+        color: var(--muted);
+        padding: 0.5rem 0;
+      }
+      .read-results .err {
+        color: #b91c1c;
+        padding: 0.35rem 0;
+      }
+      table.vaults {
+        width: 100%;
+        border-collapse: collapse;
+        background: #fff;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      table.vaults th,
+      table.vaults td {
+        padding: 0.45rem 0.55rem;
+        text-align: left;
+        border-bottom: 1px solid #e2e8f0;
+        vertical-align: top;
+      }
+      table.vaults th {
+        background: #f1f5f9;
+        font-size: 0.72rem;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        color: #475569;
+        font-weight: 600;
+      }
+      table.vaults tr:last-child td {
+        border-bottom: none;
+      }
+      table.vaults td.mono {
+        font-family: ui-monospace, monospace;
+        font-size: 0.72rem;
+        word-break: break-all;
+      }
+      table.vaults td.num {
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+      table.tokens {
+        width: 100%;
+        margin: 0.25rem 0 0.5rem;
+        font-size: 0.75rem;
+        border-collapse: collapse;
+      }
+      table.tokens th,
+      table.tokens td {
+        padding: 0.3rem 0.45rem;
+        border: 1px solid #e2e8f0;
+        text-align: left;
+      }
+      table.tokens th {
+        background: #f8fafc;
+        font-weight: 600;
+        color: #64748b;
+        font-size: 0.68rem;
+      }
+      .batch-cell {
+        white-space: nowrap;
+        font-size: 0.78rem;
+        vertical-align: middle;
+      }
+      .batch-cell label {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        margin: 0;
+        cursor: pointer;
+        font-weight: 500;
+      }
+      .batch-ix-wrap {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        margin-right: 0.65rem;
+        font-weight: 500;
+        cursor: pointer;
+      }
+      .batch-action-pair {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.35rem 0.75rem;
+      }
+      .read-batch-bar {
+        margin-top: 0.85rem;
+        padding-top: 0.75rem;
+        border-top: 1px solid var(--border);
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem 0.75rem;
+      }
+      .read-batch-bar[hidden] {
+        display: none !important;
+      }
+      @media (max-width: 800px) {
+        .body {
+          flex-direction: column;
+        }
+        .log-col {
+          width: 100%;
+          border-left: none;
+          border-top: 1px solid #334155;
+          max-height: 220px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header>
+        <div class="header-bar">
+          <h1>App-Specific Delegated Vaults</h1>
+          <span id="wallet-status" class="header-wallet-status" aria-live="polite">Not connected</span>
+          <button
+            type="button"
+            id="btn-wallet-action"
+            aria-haspopup="dialog"
+            aria-expanded="false"
+            aria-controls="wallet-modal"
+          >
+            Connect
+          </button>
+          <label class="header-cluster">
+            Cluster
+            <select id="cluster" aria-label="Solana cluster">
+              <option value="devnet" selected>devnet</option>
+              <option value="mainnet">mainnet-beta</option>
+              <option value="testnet">testnet</option>
+            </select>
+          </label>
+        </div>
+      </header>
+      <div
+        id="wallet-modal"
+        class="wallet-modal"
+        hidden
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="wallet-modal-title"
+      >
+        <button type="button" class="wallet-modal-scrim" id="wallet-modal-scrim" aria-label="Close wallet list"></button>
+        <div class="wallet-modal-panel">
+          <div class="wallet-modal-header">
+            <h2 id="wallet-modal-title">Connect a wallet</h2>
+            <button type="button" class="wallet-modal-close" id="btn-wallet-modal-close" aria-label="Close">
+              &times;
+            </button>
+          </div>
+          <p class="wallet-modal-hint">Pick an installed wallet. Each option opens that wallet's connect flow.</p>
+          <div id="wallet-modal-list" class="wallet-modal-list"></div>
+        </div>
+      </div>
+      <div class="body">
+        <main class="main-col">
+          <section class="card" aria-labelledby="read-heading">
+            <h2 id="read-heading">Read vaults</h2>
+            <p class="hint">Query on-chain vault accounts. Owner defaults from your wallet when connected; you can override.</p>
+            <label class="field">
+              <span>Owner (wallet) filter</span>
+              <input type="text" id="query-wallet" placeholder="Owner pubkey" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span>App program</span>
+              <input type="text" id="query-app" placeholder="For “by app” or “wallet × app”" autocomplete="off" />
+            </label>
+            <div class="preset-row">
+              <button type="button" class="action" id="btn-vaults-wallet">By wallet</button>
+              <button type="button" class="action" id="btn-vaults-app">By app</button>
+              <button type="button" class="action" id="btn-vaults-both">Wallet × app</button>
+            </div>
+            <div class="read-results" id="read-results" aria-live="polite">
+              <p class="empty">Run a query to see results here.</p>
+            </div>
+            <div id="read-batch-bar" class="read-batch-bar" hidden>
+              <button type="button" class="action" id="btn-run-selected">Sign selected (one transaction)</button>
+            </div>
+          </section>
+
+          <section class="card" aria-labelledby="create-heading">
+            <h2 id="create-heading">Create vault</h2>
+            <p class="hint">Creates the <code>["vault", owner, app]</code> PDA for your connected wallet.</p>
+            <label class="field">
+              <span>App program id</span>
+              <input type="text" id="create-app" placeholder="App program address" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span>Delegate (optional)</span>
+              <input type="text" id="create-delegate" placeholder="Leave blank to use connected wallet" autocomplete="off" />
+            </label>
+            <p class="hint" style="margin-bottom: 0.35rem">Delegate expiry</p>
+            <div class="preset-row" role="group" aria-label="Delegate expiry presets">
+              <button type="button" class="preset-expiry" data-preset="1h">+1 hour</button>
+              <button type="button" class="preset-expiry" data-preset="1d">+1 day</button>
+              <button type="button" class="preset-expiry" data-preset="never">Never</button>
+              <span class="delegate-expiry-caption"></span>
+            </div>
+            <button type="button" class="action" id="btn-create-vault">Create vault</button>
+          </section>
+
+          <section class="card" aria-labelledby="deposit-heading">
+            <h2 id="deposit-heading">Deposit SPL</h2>
+            <label class="field">
+              <span>App program id</span>
+              <input type="text" id="deposit-app" placeholder="App program address" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span>SPL mint</span>
+              <input type="text" id="deposit-mint" placeholder="Mint address" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span>Token program</span>
+              <select id="deposit-token-program">
+                <option value="spl" selected>SPL Token</option>
+                <option value="token2022">Token-2022</option>
+              </select>
+            </label>
+            <p class="hint">UI amount (e.g. 1.5 with 6 decimals → 1500000 base units).</p>
+            <div class="amount-row">
+              <label class="field">
+                <span>Amount</span>
+                <input type="text" id="deposit-amount-ui" inputmode="decimal" placeholder="0" autocomplete="off" />
+              </label>
+              <label class="field decimals-field">
+                <span>Decimals</span>
+                <input type="number" id="deposit-decimals" min="0" max="18" value="6" step="1" />
+              </label>
+            </div>
+            <button type="button" class="action" id="btn-deposit">Deposit</button>
+          </section>
+
+          <section class="card" aria-labelledby="withdraw-heading">
+            <h2 id="withdraw-heading">Withdraw SPL</h2>
+            <label class="field">
+              <span>App program id</span>
+              <input type="text" id="withdraw-app" placeholder="App program address" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span>SPL mint</span>
+              <input type="text" id="withdraw-mint" placeholder="Mint address" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span>Token program</span>
+              <select id="withdraw-token-program">
+                <option value="spl" selected>SPL Token</option>
+                <option value="token2022">Token-2022</option>
+              </select>
+            </label>
+            <div class="amount-row">
+              <label class="field">
+                <span>Amount</span>
+                <input type="text" id="withdraw-amount-ui" inputmode="decimal" placeholder="0" autocomplete="off" />
+              </label>
+              <label class="field decimals-field">
+                <span>Decimals</span>
+                <input type="number" id="withdraw-decimals" min="0" max="18" value="6" step="1" />
+              </label>
+            </div>
+            <button type="button" class="action" id="btn-withdraw">Withdraw</button>
+          </section>
+
+          <section class="card" aria-labelledby="delegate-heading">
+            <h2 id="delegate-heading">Update delegate</h2>
+            <label class="field">
+              <span>App program id</span>
+              <input type="text" id="update-app" placeholder="App program address" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span>Delegate (optional)</span>
+              <input type="text" id="update-delegate" placeholder="Leave blank to use connected wallet" autocomplete="off" />
+            </label>
+            <p class="hint" style="margin-bottom: 0.35rem">Delegate expiry</p>
+            <div class="preset-row" role="group" aria-label="Delegate expiry presets">
+              <button type="button" class="preset-expiry" data-preset="1h">+1 hour</button>
+              <button type="button" class="preset-expiry" data-preset="1d">+1 day</button>
+              <button type="button" class="preset-expiry" data-preset="never">Never</button>
+              <span class="delegate-expiry-caption"></span>
+            </div>
+            <button type="button" class="action" id="btn-change-delegate">Update delegate</button>
+          </section>
+
+          <section class="card" aria-labelledby="close-ata-heading">
+            <h2 id="close-ata-heading">Close vault ATA</h2>
+            <p class="hint">ATA must be empty. Rent returns to your wallet.</p>
+            <label class="field">
+              <span>App program id</span>
+              <input type="text" id="close-ata-app" placeholder="App program address" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span>SPL mint</span>
+              <input type="text" id="close-ata-mint" placeholder="Mint address" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span>Token program</span>
+              <select id="close-ata-token-program">
+                <option value="spl" selected>SPL Token</option>
+                <option value="token2022">Token-2022</option>
+              </select>
+            </label>
+            <button type="button" class="action" id="btn-close-ata">Close vault ATA</button>
+          </section>
+
+          <section class="card" aria-labelledby="close-vault-heading">
+            <h2 id="close-vault-heading">Close vault</h2>
+            <p class="hint">Requires all vault ATAs to be closed first.</p>
+            <label class="field">
+              <span>App program id</span>
+              <input type="text" id="close-vault-app" placeholder="App program address" autocomplete="off" />
+            </label>
+            <button type="button" class="action" id="btn-close-vault">Close vault</button>
+          </section>
+        </main>
+        <aside class="log-col">
+          <h2>Log</h2>
+          <pre id="log"></pre>
+        </aside>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
