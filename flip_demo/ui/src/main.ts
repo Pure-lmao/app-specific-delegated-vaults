@@ -50,6 +50,9 @@ const FLIP_PROGRAM_ADDRESS = address('BPppJw92aJEF4PC1jdVWFGSc3SJCCH6BJveDpu786S
 const DEVNET_USDC_MINT = address('Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr');
 const USDC_DECIMALS = 6;
 const DEVNET_RPC = 'https://api.devnet.solana.com';
+/** Show “get airdrop” when delegate SOL is strictly below this (0.001 SOL). */
+const DELEGATE_LOW_BALANCE_LAMPORTS = lamports(1_000_000n);
+const LAMPORTS_PER_SOL = 1_000_000_000n;
 const NO_DELEGATE_EXPIRY = 0xffff_ffff;
 const IDB_NAME = 'flip-demo-kv';
 const IDB_STORE = 'kv';
@@ -63,6 +66,10 @@ const walletModalListEl = document.querySelector('#wallet-modal-list') as HTMLEl
 const btnWalletModalClose = document.querySelector('#btn-wallet-modal-close') as HTMLButtonElement;
 const walletModalScrim = document.querySelector('#wallet-modal-scrim') as HTMLButtonElement;
 const delegateLine = document.querySelector('#delegate-line')!;
+const delegateFunding = document.querySelector('#delegate-funding') as HTMLElement;
+const delegateBalanceValue = document.querySelector('#delegate-balance-value')!;
+const delegateAirdropWrap = document.querySelector('#delegate-airdrop-wrap') as HTMLElement;
+const btnDelegateAirdrop = document.querySelector('#btn-delegate-airdrop') as HTMLButtonElement;
 const btnGenDelegate = document.querySelector('#btn-gen-delegate') as HTMLButtonElement;
 const btnCreateVault = document.querySelector('#btn-create-vault') as HTMLButtonElement;
 const btnUpdateDelegate = document.querySelector('#btn-update-delegate') as HTMLButtonElement;
@@ -431,6 +438,82 @@ function requireDelegate(): KeyPairSigner {
    return delegateSigner;
 }
 
+function lamportsToSolDisplay(l: bigint): string {
+   const whole = l / LAMPORTS_PER_SOL;
+   const rem = l % LAMPORTS_PER_SOL;
+   if (rem === 0n) {
+      return `${whole}`;
+   }
+   const frac = rem.toString().padStart(9, '0').replace(/0+$/, '');
+   return `${whole}.${frac}`;
+}
+
+type DelegateBalanceView = 'no-delegate' | 'loading' | 'err' | bigint;
+
+function applyDelegateChrome(balanceRead: DelegateBalanceView): void {
+   if (!delegateSigner || balanceRead === 'no-delegate') {
+      delegateLine.textContent = 'No delegate in this browser.';
+      delegateFunding.hidden = true;
+      delegateAirdropWrap.hidden = true;
+      return;
+   }
+   delegateLine.textContent = `Delegate: ${String(delegateSigner.address)}`;
+   delegateFunding.hidden = false;
+   if (balanceRead === 'loading') {
+      delegateBalanceValue.textContent = '…';
+      delegateAirdropWrap.hidden = true;
+      return;
+   }
+   if (balanceRead === 'err') {
+      delegateBalanceValue.textContent = 'unknown';
+      delegateAirdropWrap.hidden = false;
+      return;
+   }
+   delegateBalanceValue.textContent = lamportsToSolDisplay(balanceRead);
+   delegateAirdropWrap.hidden = balanceRead >= DELEGATE_LOW_BALANCE_LAMPORTS;
+}
+
+async function refreshDelegateBalance(): Promise<void> {
+   if (!delegateSigner) {
+      applyDelegateChrome('no-delegate');
+      return;
+   }
+   applyDelegateChrome('loading');
+   try {
+      const rpc = createRpc();
+      const { value: bal } = await rpc.getBalance(delegateSigner.address).send();
+      applyDelegateChrome(bal);
+   } catch (e) {
+      log(`Could not fetch delegate balance: ${String(e)}`);
+      applyDelegateChrome('err');
+   }
+}
+
+async function requestDelegateAirdropFromUi(): Promise<void> {
+   const del = delegateSigner;
+   if (!del) {
+      log('Generate a delegate key first.');
+      return;
+   }
+   const addrStr = String(del.address);
+   btnDelegateAirdrop.disabled = true;
+   log('Requesting devnet airdrop to delegate…');
+   try {
+      const rpc = createRpc();
+      const sig = await rpc.requestAirdrop(del.address, lamports(1_000_000_000n), { commitment: 'confirmed' }).send();
+      log(`Airdrop confirmed: ${sig}`);
+      await refreshDelegateBalance();
+   } catch (e) {
+      const errPart = e instanceof Error ? e.message : String(e);
+      log(
+         `Airdrop failed (${errPart}). Visit https://faucet.solana.com/ to request a devnet airdrop to your delegate address: ${addrStr}`,
+      );
+      console.error('[flip demo] delegate airdrop failed', e);
+   } finally {
+      btnDelegateAirdrop.disabled = false;
+   }
+}
+
 function flipMode(): 'appIx' | 'cpi' {
    const el = document.querySelector<HTMLInputElement>('input[name="flip-mode"]:checked');
    return el?.value === 'cpi' ? 'cpi' : 'appIx';
@@ -555,26 +638,14 @@ async function loadDelegateFromIdb(): Promise<void> {
    const raw = await idbGet(IDB_DELEGATE_KEY);
    if (!raw || (raw.length !== 32 && raw.length !== 64)) {
       delegateSigner = null;
-      delegateLine.textContent = 'No delegate in this browser.';
+      applyDelegateChrome('no-delegate');
       return;
    }
    delegateSigner =
       raw.length === 64
          ? await createKeyPairSignerFromBytes(raw)
          : await createKeyPairSignerFromPrivateKeyBytes(raw);
-   delegateLine.textContent = `Delegate: ${String(delegateSigner.address)}`;
-}
-
-async function ensureDelegateAirdrop(): Promise<void> {
-   const rpc = createRpc();
-   const d = requireDelegate();
-   const { value: bal } = await rpc.getBalance(d.address).send();
-   if (bal >= lamports(50_000_000n)) {
-      return;
-   }
-   log('Airdropping delegate (devnet)…');
-   const sig = await rpc.requestAirdrop(d.address, lamports(1_000_000_000n), { commitment: 'confirmed' }).send();
-   log(`Airdrop sig ${sig}`);
+   await refreshDelegateBalance();
 }
 
 function encodeFlipData(disc: 1 | 2, amount: bigint, betOdd: boolean): Uint8Array {
@@ -684,7 +755,6 @@ async function sendTx(
 async function onCreateVault(): Promise<void> {
    const owner = getOwnerSigner();
    const del = requireDelegate();
-   await ensureDelegateAirdrop();
    const ownerAddr = owner.address;
    const exp = delegateExpiresFromInput();
    const [pda] = await deriveUserVaultPda(VAULT_PROGRAM_ADDRESS, ownerAddr, FLIP_PROGRAM_ADDRESS);
@@ -721,7 +791,6 @@ async function onUpdateDelegate(): Promise<void> {
 async function onDeposit(): Promise<void> {
    const owner = getOwnerSigner();
    const del = requireDelegate();
-   await ensureDelegateAirdrop();
    const ownerAddr = owner.address;
    const amt = parseUiAmount(depositUi.value, USDC_DECIMALS);
    const [pda] = await deriveUserVaultPda(VAULT_PROGRAM_ADDRESS, ownerAddr, FLIP_PROGRAM_ADDRESS);
@@ -779,7 +848,6 @@ async function onFlip(): Promise<void> {
    flipResult.textContent = '';
    const owner = getOwnerSigner();
    const del = requireDelegate();
-   await ensureDelegateAirdrop();
    const ownerAddr = owner.address;
    const poolBal = await fetchPoolTokenBalance();
    const maxStake = poolBal / 100n;
@@ -891,9 +959,13 @@ btnGenDelegate.addEventListener('click', () => {
       const secret = crypto.getRandomValues(new Uint8Array(32));
       await idbSet(IDB_DELEGATE_KEY, secret);
       delegateSigner = await createKeyPairSignerFromPrivateKeyBytes(secret);
-      delegateLine.textContent = `Delegate: ${String(delegateSigner.address)}`;
       log('New delegate (32-byte seed) stored in IndexedDB');
+      await refreshDelegateBalance();
    })();
+});
+
+btnDelegateAirdrop.addEventListener('click', () => {
+   void requestDelegateAirdropFromUi();
 });
 
 btnCreateVault.addEventListener('click', () => {

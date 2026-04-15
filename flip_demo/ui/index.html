@@ -399,6 +399,11 @@
       .muted {
         color: var(--muted);
       }
+      .delegate-row {
+        margin: 0;
+        font-size: 0.95rem;
+        line-height: 1.5;
+      }
       @media (max-width: 800px) {
         .body {
           flex-direction: column;
@@ -465,7 +470,15 @@
           <section class="card" aria-labelledby="delegate-heading">
             <h2 id="delegate-heading">Delegate (session key)</h2>
             <p class="hint">Stored in IndexedDB. Used as fee payer and vault delegate for this demo.</p>
-            <p id="delegate-line" class="muted">No delegate in this browser.</p>
+            <p id="delegate-row" class="muted delegate-row">
+              <span id="delegate-line">No delegate in this browser.</span>
+              <span id="delegate-funding" hidden>
+                · balance: <span id="delegate-balance-value">0</span> SOL
+              </span>
+            </p>
+            <div class="card-actions" id="delegate-airdrop-wrap" hidden>
+              <button type="button" class="action" id="btn-delegate-airdrop">Get airdrop</button>
+            </div>
             <button type="button" class="action" id="btn-gen-delegate">Generate &amp; store in IndexedDB</button>
           </section>
 
