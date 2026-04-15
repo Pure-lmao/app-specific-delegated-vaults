@@ -4,7 +4,7 @@
 //! Accounts: 5 fixed, then all accounts required by the inner app instruction (same order as that ix).
 //! 0. `delegate` (signer) — must match vault state
 //! 1. `owner` (readonly)
-//! 2. `user_vault_pda` (readonly)
+//! 2. `user_vault_pda` (writable)
 //! 3. `app_address` (readonly)
 //! 4. `clock_sysvar` (readonly) — `SysvarC1ock11111111111111111111111111111111`
 //! 5.. `inner_accounts` — metas for the CPI to the app program
@@ -33,6 +33,7 @@ use pinocchio::{
    AccountView, Address, ProgramResult,
 };
 use pinocchio_log::log;
+use solana_address::address_eq;
 
 /// Fused meta + CPI row build and invoke. `metas_out` is caller-owned storage (smaller array on the
 /// outer frame); `CpiAccount` buffer stays here so we never stack both full arrays in `process`.
@@ -44,6 +45,7 @@ unsafe fn invoke_app_ix_fused<'a>(
    signers: &[Signer],
    n: usize,
    metas_out: &mut [MaybeUninit<InstructionAccount<'a>>; MAX_STATIC_CPI_ACCOUNTS],
+   vault_pda_address: &Address,
 ) {
    let mut cpi_accounts: [MaybeUninit<CpiAccount>; MAX_STATIC_CPI_ACCOUNTS] =
       unsafe { MaybeUninit::uninit().assume_init() };
@@ -51,7 +53,11 @@ unsafe fn invoke_app_ix_fused<'a>(
    // SAFETY: `n == inner_accounts.len()` (caller); `i < n` ⇒ valid index.
    for i in 0..n {
       let a = unsafe { inner_accounts.get_unchecked(i) };
-      metas_out[i].write(InstructionAccount::from(a));
+      if unlikely(address_eq(a.address(), vault_pda_address)) {
+         metas_out[i].write(InstructionAccount::writable_signer(a.address()));
+      } else {
+         metas_out[i].write(InstructionAccount::from(a));
+      }
       CpiAccount::init_from_account_view(a, &mut cpi_accounts[i]);
    }
 
@@ -128,6 +134,7 @@ pub fn process(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
          &signers,
          n,
          &mut metas,
+         user_vault_pda.address(),
       );
    }
 

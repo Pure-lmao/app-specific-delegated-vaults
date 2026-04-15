@@ -171,6 +171,14 @@ The [`demo/`](demo/) app is a small Vite + TypeScript page that connects a walle
 cd demo && npm install && npm run dev
 ```
 
+### Flip demo (`flip_demo/`)
+
+A small **end-to-end app flow** sample: wallet connect, vault create/deposit, delegate key in the page, and a toy flip game that spends from the vault via delegate-signed instructions. It targets **Solana devnet** with devnet mints/RPC baked into the UI; treat it as a **walkthrough only**—not hardened, not audited, and not something to copy for mainnet security.
+
+```bash
+cd flip_demo/ui ; npm install ; npm run dev
+```
+
 ---
 
 ## Development
@@ -189,6 +197,7 @@ cd demo && npm install && npm run dev
 | `demo/` | Browser demo (`npm run dev` in that folder) -- wallet + vault flows against devnet or other clusters. |
 | `program/tests/` | Mollusk integration tests. |
 | `testing/` | Node scripts and experiments. |
+| `flip_demo/` | Flip demo app to show how an app can use the smooth flow allowed by the vault program |
 
 ### Building
 

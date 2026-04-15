@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Flip demo — delegated vault</title>
+    <style>
+      :root {
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        line-height: 1.45;
+        color: #0f172a;
+        background: #e2e8f0;
+        --card-bg: #fff;
+        --border: #cbd5e1;
+        --accent: #2563eb;
+        --muted: #64748b;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+      }
+      .page {
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+      }
+      header {
+        background: #0f172a;
+        color: #f1f5f9;
+        padding: 0.65rem 1.25rem;
+        border-bottom: 1px solid #334155;
+      }
+      .header-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem 0.75rem;
+        min-width: 0;
+      }
+      .header-bar h1 {
+        margin: 0;
+        font-size: 1.05rem;
+        font-weight: 600;
+        flex: 0 1 auto;
+        min-width: 0;
+        line-height: 1.3;
+      }
+      .header-cluster {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        font-size: 0.85rem;
+        margin: 0;
+        flex-shrink: 0;
+      }
+      .header-bar .header-cluster {
+        margin-left: auto;
+      }
+      .header-cluster select {
+        padding: 0.35rem 0.5rem;
+        border-radius: 6px;
+        border: 1px solid #475569;
+        background: #1e293b;
+        color: #f8fafc;
+      }
+      .header-cluster select:disabled {
+        opacity: 0.88;
+        cursor: not-allowed;
+      }
+      .header-wallet-status {
+        flex: 1 1 8rem;
+        min-width: 0;
+        font-size: 0.8rem;
+        color: #94a3b8;
+        line-height: 1.35rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #btn-wallet-action {
+        flex-shrink: 0;
+      }
+      #btn-wallet-action[data-mode="disconnect"] {
+        border-color: #94a3b8;
+        background: transparent;
+      }
+      .wallet-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 200;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+      }
+      .wallet-modal[hidden] {
+        display: none;
+      }
+      .wallet-modal-scrim {
+        position: absolute;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.55);
+        border: none;
+        padding: 0;
+        cursor: pointer;
+      }
+      .wallet-modal-panel {
+        position: relative;
+        z-index: 1;
+        width: min(22rem, 100%);
+        max-height: min(70vh, 28rem);
+        overflow: auto;
+        background: #1e293b;
+        color: #f1f5f9;
+        border: 1px solid #475569;
+        border-radius: 10px;
+        padding: 1rem 1.1rem;
+        box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
+      }
+      .wallet-modal-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin-bottom: 0.35rem;
+      }
+      .wallet-modal-header h2 {
+        margin: 0;
+        font-size: 1rem;
+        font-weight: 600;
+      }
+      .wallet-modal-close {
+        flex-shrink: 0;
+        width: 2rem;
+        height: 2rem;
+        padding: 0;
+        line-height: 1;
+        font-size: 1.35rem;
+        border-radius: 6px;
+        border: 1px solid #64748b;
+        background: transparent;
+        color: #e2e8f0;
+        cursor: pointer;
+      }
+      .wallet-modal-close:hover {
+        background: #334155;
+      }
+      .wallet-modal-hint {
+        margin: 0 0 0.85rem;
+        font-size: 0.8rem;
+        color: #94a3b8;
+        line-height: 1.4;
+      }
+      .wallet-modal-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+      }
+      .wallet-modal-list button {
+        width: 100%;
+        text-align: left;
+        padding: 0.55rem 0.75rem;
+        border-radius: 8px;
+        border: 1px solid #475569;
+        background: #334155;
+        color: #f8fafc;
+        cursor: pointer;
+        font-size: 0.9rem;
+      }
+      .wallet-modal-list button:hover:not(:disabled) {
+        background: #475569;
+      }
+      .wallet-modal-list button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      header button {
+        padding: 0.45rem 0.85rem;
+        border-radius: 6px;
+        border: 1px solid #64748b;
+        background: #334155;
+        color: #f8fafc;
+        cursor: pointer;
+        font-size: 0.85rem;
+      }
+      header button:hover:not(:disabled) {
+        background: #475569;
+      }
+      header button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .body {
+        display: flex;
+        flex: 1;
+        align-items: stretch;
+        min-height: 0;
+      }
+      .main-col {
+        flex: 1;
+        min-width: 0;
+        padding: 1rem 1.25rem 2rem;
+        overflow-y: auto;
+      }
+      .log-col {
+        width: min(380px, 42vw);
+        flex-shrink: 0;
+        background: #1e293b;
+        color: #e2e8f0;
+        border-left: 1px solid #334155;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+      .log-col h2 {
+        margin: 0;
+        padding: 0.65rem 0.85rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #94a3b8;
+        border-bottom: 1px solid #334155;
+      }
+      #log {
+        flex: 1;
+        margin: 0;
+        padding: 0.65rem 0.85rem;
+        font-size: 0.72rem;
+        font-family: ui-monospace, monospace;
+        white-space: pre-wrap;
+        word-break: break-word;
+        overflow-y: auto;
+      }
+      section.card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 1rem 1.1rem;
+        margin-bottom: 1rem;
+        width: 100%;
+        max-width: 100%;
+        box-shadow: 0 1px 2px rgb(15 23 42 / 0.06);
+      }
+      section.card h2 {
+        margin: 0 0 0.75rem;
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: #1e293b;
+        padding-bottom: 0.35rem;
+        border-bottom: 1px solid #e2e8f0;
+      }
+      section.card p.hint {
+        margin: 0 0 0.75rem;
+        font-size: 0.8rem;
+        color: var(--muted);
+      }
+      label.field {
+        display: block;
+        margin-bottom: 0.65rem;
+        font-size: 0.82rem;
+      }
+      label.field span {
+        display: block;
+        margin-bottom: 0.2rem;
+        color: #475569;
+        font-weight: 500;
+      }
+      input[type="text"],
+      input[type="number"],
+      select {
+        width: 100%;
+        max-width: 100%;
+        padding: 0.45rem 0.55rem;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        font-size: 0.9rem;
+      }
+      input[type="number"] {
+        max-width: 10rem;
+      }
+      .flip-mode-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem 1.25rem;
+        align-items: center;
+        margin: 0.35rem 0 0.75rem;
+      }
+      .flip-mode-row label {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        margin: 0;
+        font-size: 0.82rem;
+        cursor: pointer;
+        color: #475569;
+        font-weight: 500;
+      }
+      .flip-mode-row input[type="radio"] {
+        width: auto;
+        max-width: none;
+        margin: 0;
+      }
+      .card-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-top: 0.35rem;
+      }
+      section.card button.action {
+        margin-top: 0.35rem;
+        padding: 0.5rem 1rem;
+        border-radius: 6px;
+        border: none;
+        background: var(--accent);
+        color: #fff;
+        font-weight: 600;
+        font-size: 0.88rem;
+        cursor: pointer;
+      }
+      .card-actions .action {
+        margin-top: 0;
+      }
+      section.card button.action:hover:not(:disabled) {
+        background: #1d4ed8;
+      }
+      section.card button.action:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      #flip-result {
+        margin-top: 0.5rem;
+        font-size: 0.88rem;
+        color: #1e293b;
+      }
+      .flip-actions-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem;
+        margin-top: 0.35rem;
+      }
+      .flip-actions-row .action {
+        margin-top: 0;
+      }
+      .flip-spinner {
+        width: 1.15rem;
+        height: 1.15rem;
+        border: 2px solid #e2e8f0;
+        border-top-color: var(--accent);
+        border-radius: 50%;
+        animation: flip-spin 0.65s linear infinite;
+        flex-shrink: 0;
+      }
+      .flip-spinner[hidden] {
+        display: none !important;
+      }
+      @keyframes flip-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .flip-history-label {
+        margin: 0.75rem 0 0.25rem;
+        font-size: 0.72rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        color: var(--muted);
+      }
+      .flip-history {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.35rem;
+        min-height: 1.75rem;
+      }
+      .flip-history-chip {
+        font-size: 0.72rem;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        padding: 0.2rem 0.45rem;
+        border-radius: 4px;
+        letter-spacing: 0.02em;
+      }
+      .flip-history-win {
+        background: #dcfce7;
+        color: #166534;
+        border: 1px solid #86efac;
+      }
+      .flip-history-lose {
+        background: #fee2e2;
+        color: #991b1b;
+        border: 1px solid #fca5a5;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      @media (max-width: 800px) {
+        .body {
+          flex-direction: column;
+        }
+        .log-col {
+          width: 100%;
+          border-left: none;
+          border-top: 1px solid #334155;
+          max-height: 220px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <header>
+        <div class="header-bar">
+          <h1>Flip demo — delegated vault</h1>
+          <span id="wallet-status" class="header-wallet-status" aria-live="polite">Not connected</span>
+          <button
+            type="button"
+            id="btn-wallet-action"
+            aria-haspopup="dialog"
+            aria-expanded="false"
+            aria-controls="wallet-modal"
+          >
+            Connect
+          </button>
+          <label class="header-cluster">
+            Cluster
+            <select
+              id="cluster"
+              aria-label="Solana cluster"
+              disabled
+              title="This demo is fixed to devnet"
+            >
+              <option value="devnet" selected>devnet</option>
+            </select>
+          </label>
+        </div>
+      </header>
+      <div
+        id="wallet-modal"
+        class="wallet-modal"
+        hidden
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="wallet-modal-title"
+      >
+        <button type="button" class="wallet-modal-scrim" id="wallet-modal-scrim" aria-label="Close wallet list"></button>
+        <div class="wallet-modal-panel">
+          <div class="wallet-modal-header">
+            <h2 id="wallet-modal-title">Connect a wallet</h2>
+            <button type="button" class="wallet-modal-close" id="btn-wallet-modal-close" aria-label="Close">
+              &times;
+            </button>
+          </div>
+          <p class="wallet-modal-hint">Pick an installed wallet. Each option opens that wallet's connect flow.</p>
+          <div id="wallet-modal-list" class="wallet-modal-list"></div>
+        </div>
+      </div>
+      <div class="body">
+        <main class="main-col">
+          <section class="card" aria-labelledby="delegate-heading">
+            <h2 id="delegate-heading">Delegate (session key)</h2>
+            <p class="hint">Stored in IndexedDB. Used as fee payer and vault delegate for this demo.</p>
+            <p id="delegate-line" class="muted">No delegate in this browser.</p>
+            <button type="button" class="action" id="btn-gen-delegate">Generate &amp; store in IndexedDB</button>
+          </section>
+
+          <section class="card" aria-labelledby="vault-heading">
+            <h2 id="vault-heading">Vault</h2>
+            <p class="hint">App program is the flip demo program (fixed). Create the vault, then deposit devnet USDC.</p>
+            <label class="field">
+              <span>Delegate expiry (seconds from now)</span>
+              <input type="number" id="expiry-sec" value="60" min="1" />
+            </label>
+            <label class="field">
+              <span>Deposit amount (UI)</span>
+              <input type="text" id="deposit-ui" value="1" autocomplete="off" />
+            </label>
+            <div class="card-actions">
+              <button type="button" class="action" id="btn-create-vault">Create vault</button>
+              <button type="button" class="action" id="btn-update-delegate">Update delegate</button>
+              <button type="button" class="action" id="btn-deposit">Deposit USDC</button>
+            </div>
+          </section>
+
+          <section class="card" aria-labelledby="flip-heading">
+            <h2 id="flip-heading">Flip</h2>
+            <p class="hint">Max stake is 1% of the flip pool. Outcome uses the confirmation slot (odd/even).</p>
+            <div class="flip-mode-row" role="radiogroup" aria-label="Flip instruction path">
+              <label>
+                <input type="radio" name="flip-mode" value="appIx" checked />
+                Via vault AppIx (inner flip)
+              </label>
+              <label>
+                <input type="radio" name="flip-mode" value="cpi" />
+                Via flip program + vault cpi_entry
+              </label>
+            </div>
+            <label class="field">
+              <span>Bet</span>
+              <select id="bet-side">
+                <option value="odd">Odd</option>
+                <option value="even">Even</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Stake (UI USDC)</span>
+              <input type="text" id="flip-amount-ui" value="1" autocomplete="off" />
+            </label>
+            <p id="pool-hint" class="hint"></p>
+            <div class="flip-actions-row">
+              <button type="button" class="action" id="btn-flip">Flip</button>
+              <span id="flip-spinner" class="flip-spinner" hidden aria-label="Waiting for result"></span>
+            </div>
+            <p id="flip-result"></p>
+            <p class="flip-history-label">Last 10 (oldest → newest)</p>
+            <div id="flip-history" class="flip-history" aria-label="Last 10 flip outcomes"></div>
+          </section>
+        </main>
+        <aside class="log-col">
+          <h2>Log</h2>
+          <pre id="log"></pre>
+        </aside>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

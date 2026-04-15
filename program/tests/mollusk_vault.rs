@@ -56,3 +56,4 @@ test_module!(close_vault_ata);
 test_module!(close_user_vault);
 test_module!(delegate_expiry);
 test_module!(error_paths);
+test_module!(unauthorized_access);

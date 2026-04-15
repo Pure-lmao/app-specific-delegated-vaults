@@ -207,7 +207,7 @@ pub fn app_ix_ix(
    let mut accounts = vec![
       AccountMeta::new(*fixed.delegate, true),
       AccountMeta::new_readonly(*fixed.owner, false),
-      AccountMeta::new_readonly(*fixed.user_vault_pda, false),
+      AccountMeta::new(*fixed.user_vault_pda, false),
       AccountMeta::new_readonly(*fixed.app_address, false),
       AccountMeta::new_readonly(clock, false),
    ];

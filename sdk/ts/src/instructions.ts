@@ -229,7 +229,7 @@ export function getAppIxInstruction(input: {
    const fixed: AccountMeta[] = [
       { address: input.accounts.delegate, role: AccountRole.WRITABLE_SIGNER },
       { address: input.accounts.owner, role: AccountRole.READONLY },
-      { address: input.accounts.userVaultPda, role: AccountRole.READONLY },
+      { address: input.accounts.userVaultPda, role: AccountRole.WRITABLE },
       { address: input.accounts.appAddress, role: AccountRole.READONLY },
       { address: SYSVAR_CLOCK_ADDRESS, role: AccountRole.READONLY },
    ];
@@ -271,7 +271,7 @@ export function getCpiEntryInstruction(input: {
          { address: input.accounts.owner, role: AccountRole.READONLY },
          {
             address: input.accounts.userVaultPda,
-            role: wNative ? AccountRole.WRITABLE : AccountRole.READONLY,
+            role: AccountRole.WRITABLE,
          },
          {
             address: input.accounts.userVaultAta,

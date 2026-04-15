@@ -7,7 +7,7 @@
       "skipLibCheck": true,
       "noEmit": true,
       "declaration": true,
-      "verbatimModuleSyntax": true,
+      "verbatimModuleSyntax": false,
       "isolatedModules": true,
       "noUnusedLocals": true,
       "noUnusedParameters": true,

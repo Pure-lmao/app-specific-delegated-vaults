@@ -1,5 +1,5 @@
 {
-   "name": "@vault/sdk",
+   "name": "@ASDV/sdk",
    "version": "0.1.0",
    "license": "CC-BY-NC-4.0",
    "type": "module",
@@ -18,12 +18,13 @@
       "src"
    ],
    "scripts": {
+      "clean": "node --input-type=module -e \"import { rmSync } from 'node:fs'; try { rmSync('dist', { recursive: true }); } catch {}\"",
       "check": "tsc --noEmit",
-      "build": "tsc -p tsconfig.build.json",
+      "build": "npm run clean && tsc -p tsconfig.build.json",
       "prepack": "npm run build"
    },
    "dependencies": {
-      "@solana/kit": "^6.7.0"
+      "@solana/kit": "^6.8.0"
    },
    "devDependencies": {
       "typescript": "^5.7.2"
