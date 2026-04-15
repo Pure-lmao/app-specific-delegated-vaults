@@ -173,7 +173,7 @@ cd demo && npm install && npm run dev
 
 ### Flip demo (`flip_demo/`)
 
-A small **end-to-end app flow** sample: wallet connect, vault create/deposit, delegate key in the page, and a toy flip game that spends from the vault via delegate-signed instructions. It targets **Solana devnet** with devnet mints/RPC baked into the UI; treat it as a **walkthrough only**—not hardened, not audited, and not something to copy for mainnet security.
+A small **end-to-end app flow** sample: wallet connect, vault create/deposit, delegate key in the page, and a toy flip game that spends from the vault via delegate-signed instructions. It targets **Solana devnet** with devnet mints/RPC baked into the UI; treat it as a **walkthrough only**—not hardened, not audited, and not something to copy for mainnet security. If the pool balance is low, mint devnet USDC (`Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr` - [https://spl-token-faucet.com/](https://spl-token-faucet.com/)) and send it to the pool ATA (`579hKN2QD6N7yYSYtFaX4GKA7jKuVtkXSYXB5UqTEuhr`). The progam is deployed to `BPppJw92aJEF4PC1jdVWFGSc3SJCCH6BJveDpu786S7V`.
 
 ```bash
 cd flip_demo/ui ; npm install ; npm run dev

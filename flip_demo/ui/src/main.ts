@@ -165,8 +165,15 @@ function decodeCustomForProgram(programId: string, code: number, vaultId: string
    return `unknown program ${short} custom ${code} (0x${code.toString(16)})`;
 }
 
-/** RPC sometimes returns `Custom` / instruction index as strings in JSON. */
+/**
+ * RPC / `@solana/rpc` BigInt upcast: `simulateTransaction` allowlist does not cover `err`, so
+ * `InstructionError` → `Custom` is often `bigint` (e.g. `19n`), not `number`.
+ */
 function coerceCustomErrorCode(raw: unknown): number | null {
+   if (typeof raw === 'bigint') {
+      const n = Number(raw);
+      return Number.isSafeInteger(n) ? n : null;
+   }
    if (typeof raw === 'number' && Number.isFinite(raw)) {
       return raw;
    }

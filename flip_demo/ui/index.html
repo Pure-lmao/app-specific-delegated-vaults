@@ -471,13 +471,13 @@
 
           <section class="card" aria-labelledby="vault-heading">
             <h2 id="vault-heading">Vault</h2>
-            <p class="hint">App program is the flip demo program (fixed). Create the vault, then deposit devnet USDC.</p>
+            <p class="hint">Create the vault, then deposit devnet USDC (Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr).</p>
             <label class="field">
               <span>Delegate expiry (seconds from now)</span>
               <input type="number" id="expiry-sec" value="60" min="1" />
             </label>
             <label class="field">
-              <span>Deposit amount (UI)</span>
+              <span>Deposit amount (USDC)</span>
               <input type="text" id="deposit-ui" value="1" autocomplete="off" />
             </label>
             <div class="card-actions">
@@ -493,11 +493,11 @@
             <div class="flip-mode-row" role="radiogroup" aria-label="Flip instruction path">
               <label>
                 <input type="radio" name="flip-mode" value="appIx" checked />
-                Via vault AppIx (inner flip)
+                Via vault AppIx (CPI into flip)
               </label>
               <label>
                 <input type="radio" name="flip-mode" value="cpi" />
-                Via flip program + vault cpi_entry
+                Via flip program + vault CpiEntry
               </label>
             </div>
             <label class="field">
@@ -508,7 +508,7 @@
               </select>
             </label>
             <label class="field">
-              <span>Stake (UI USDC)</span>
+              <span>Stake (USDC)</span>
               <input type="text" id="flip-amount-ui" value="1" autocomplete="off" />
             </label>
             <p id="pool-hint" class="hint"></p>
