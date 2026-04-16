@@ -113,16 +113,6 @@ pub fn process(accounts: &mut [AccountView], data: &[u8]) -> ProgramResult {
       return Err(ProgramError::InvalidArgument);
    }
 
-   if unlikely(n == 0) {
-      let ix = InstructionView {
-         program_id: app_address.address(),
-         accounts: &[],
-         data,
-      };
-      unsafe { invoke_signed_unchecked(&ix, &[], &signers) };
-      return Ok(());
-   }
-
    let mut metas: [MaybeUninit<InstructionAccount>; MAX_STATIC_CPI_ACCOUNTS] =
       unsafe { MaybeUninit::uninit().assume_init() };
 
